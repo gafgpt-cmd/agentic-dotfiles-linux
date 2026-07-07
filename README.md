@@ -5,6 +5,12 @@ Watch the walkthrough: https://youtu.be/5N-okeDdIuI
 My personal Mac setup, managed with nix-darwin and home-manager.
 One repo, one command, and a fresh Mac ends up configured the same way every time.
 
+## Contributing / Using This Repo
+
+These are my personal dotfiles, shared publicly so people can read them, learn from them, and fork them freely.
+Feature requests and pull requests are not accepted here, and PRs are auto-closed.
+If you find a bug, please open a GitHub Issue using the bug report template.
+
 ## What you get
 
 Running the switch builds:
