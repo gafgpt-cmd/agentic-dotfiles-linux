@@ -36,7 +36,8 @@ Before you run it: review "Make it yours" below.
 ./bootstrap.sh
 ```
 
-`bootstrap.sh` does five things, in order:
+`bootstrap.sh` does six things, in order.
+It is idempotent: re-running it on a configured machine is a no-op that ends in a green step 6.
 
 1. Installs Determinate Nix, if it isn't already installed.
 2. Symlinks this repo to `~/.dotfiles`.
@@ -48,6 +49,8 @@ Before you run it: review "Make it yours" below.
 5. Installs zsh from the distro package manager and makes it your login shell.
    Deliberately the distro's zsh and not Nix's: `/usr/bin/zsh` always exists, so a broken home-manager generation can never lock you out of an SSH login.
    `~/.zshrc` itself is fully managed by home-manager either way.
+6. Verifies the end state (binaries, edit-in-place symlinks, managed `~/.zshrc`, login shell) and exits non-zero listing whatever failed.
+   Any earlier step that dies also prints a `BOOTSTRAP FAILED` banner, so a partial setup can't be mistaken for a finished one.
 
 It asks for your sudo password (steps 1 and 5). Nothing else is manual: log out, log back in, and the machine is done.
 
