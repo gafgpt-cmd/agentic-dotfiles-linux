@@ -5,6 +5,10 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
+# A mid-script failure otherwise scrolls past in the build output and looks like
+# success. Make it impossible to miss.
+trap 'echo; echo "==> BOOTSTRAP FAILED at line $LINENO. The machine is only partly set up."; echo "    Fix the error above and re-run ./bootstrap.sh - it is safe to run again."' ERR
+
 echo "==> Step 1: Determinate Nix"
 if command -v nix >/dev/null 2>&1; then
   echo "    nix already installed, skipping"
@@ -98,4 +102,45 @@ else
   echo "    login shell set to $ZSH_BIN (takes effect on your next login)"
 fi
 
-echo "==> Done. Use ./rebuild.sh for future changes."
+echo "==> Step 6: verify"
+# Assert the end state instead of trusting that every step above did its job.
+# Step 6 reports failures itself, so the blanket ERR trap would only add noise.
+trap - ERR
+# The current shell predates the switch, so reach into the profile directly.
+PATH="$HOME/.nix-profile/bin:$PATH"
+FAILED=0
+check() { # check <label> <condition-description> <0|1 ok>
+  if [ "$3" = "0" ]; then
+    printf '    ok    %s\n' "$1"
+  else
+    printf '    FAIL  %s (%s)\n' "$1" "$2"
+    FAILED=1
+  fi
+}
+
+for bin in nvim wezterm herdr claude rg fd fzf jq lazygit starship home-manager; do
+  command -v "$bin" >/dev/null 2>&1 && rc=0 || rc=1
+  check "$bin installed" "missing from ~/.nix-profile/bin" "$rc"
+done
+
+for link in .config/nvim .config/wezterm .config/herdr .claude/settings.json; do
+  [ "$(readlink -f "$HOME/$link" 2>/dev/null)" = "$DIR/home/$link" ] && rc=0 || rc=1
+  check "~/$link -> repo" "not an edit-in-place symlink into $DIR" "$rc"
+done
+
+[ -L "$HOME/.zshrc" ] && rc=0 || rc=1
+check "~/.zshrc managed by home-manager" "not a symlink" "$rc"
+
+LOGIN_SHELL="$(getent passwd "$REAL_USER" | cut -d: -f7)"
+[ "$(basename "$LOGIN_SHELL")" = "zsh" ] && rc=0 || rc=1
+check "login shell is zsh" "still $LOGIN_SHELL" "$rc"
+
+if [ "$FAILED" != "0" ]; then
+  echo
+  echo "==> BOOTSTRAP INCOMPLETE. See the FAIL lines above."
+  exit 1
+fi
+
+echo
+echo "==> Done, all checks passed. Log out and back in to land in zsh."
+echo "    Use ./rebuild.sh for future changes."
