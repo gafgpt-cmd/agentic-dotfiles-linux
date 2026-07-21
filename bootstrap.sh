@@ -141,7 +141,7 @@ for bin in nvim wezterm herdr claude rg fd fzf jq lazygit starship home-manager;
   check "$bin installed" "missing from ~/.nix-profile/bin" "$rc"
 done
 
-for link in .config/nvim .config/wezterm .config/herdr .claude/settings.json; do
+for link in .config/nvim .config/wezterm .config/herdr .claude/settings.json .claude/statusline-command.sh; do
   [ "$(readlink -f "$HOME/$link" 2>/dev/null)" = "$DIR/home/$link" ] && rc=0 || rc=1
   check "~/$link -> repo" "not an edit-in-place symlink into $DIR" "$rc"
 done

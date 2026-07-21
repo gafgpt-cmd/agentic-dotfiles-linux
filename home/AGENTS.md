@@ -1,6 +1,16 @@
 # global agent instructions
 
-- Never use the em dash "—". Use plain dash "-" instead
+- Never use the em dash "—" nor the double hyphen. Use plain dash "-" instead
+- Use English only unless explicitly asked otherwise
+- When reporting to me, lead with a self-contained answer (result/recommendation) I grasp at a glance,
+  complete enough to skip the rest. Details after, skippable, never buried or diluted.
+  Be extremely concise and sacrifice grammar for concision.
+- Same for text you write to files (e.g. markdown): never add or extrapolate, stay to the point,
+  favor deletion and shortening. Before adding, ask yourself if tighter wording conveys the intent.
+- Don't default to agreement. When I ask questions or explore ideas, give honest critical feedback:
+  flaws, tradeoffs, better alternatives; push back when I'm wrong.
+- For exploration: use `fd` for file/path discovery and `rg` for content search.
+  Do not use `find`, `grep`, Glob, or Read.
 - When writing commit messages, NEVER auto-add your agent name as co-author
 - Never manually modify CHANGELOG.md files or any files that are marked as auto-generated
 - When making technical decisions, do not give much weight to development cost.
