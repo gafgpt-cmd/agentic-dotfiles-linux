@@ -5,6 +5,16 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
+# Linux only. On macOS this used to run far enough to claim ~/.dotfiles (step 2)
+# before failing, which silently repointed the nix-darwin repo's edit-in-place
+# symlinks at this clone and left Claude Code with no settings at all.
+if [ "$(uname -s)" != "Linux" ]; then
+  echo "==> This bootstrap is Linux-only (it installs zsh via apt/dnf/pacman and"
+  echo "    configures GNOME via dconf); you are on $(uname -s)."
+  echo "    For macOS use the nix-darwin repo: github.com/GuillaumeTaffin/dotfiles"
+  exit 1
+fi
+
 # A mid-script failure otherwise scrolls past in the build output and looks like
 # success. Make it impossible to miss.
 trap 'echo; echo "==> BOOTSTRAP FAILED at line $LINENO. The machine is only partly set up."; echo "    Fix the error above and re-run ./bootstrap.sh - it is safe to run again."' ERR
