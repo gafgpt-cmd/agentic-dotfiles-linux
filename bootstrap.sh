@@ -57,11 +57,24 @@ echo "==> Step 5: make zsh the login shell"
 # /etc/passwd is root-owned, so this needs the distro package manager + sudo.
 # Deliberately the distro's zsh, not Nix's: /usr/bin/zsh always exists, so a
 # broken home-manager generation can never lock you out of an SSH login.
+# Never `command -v zsh` here: home-manager puts Nix's zsh on PATH, which would
+# make the check pass and skip the distro install we actually need.
+find_system_zsh() {
+  for candidate in /usr/bin/zsh /bin/zsh /usr/local/bin/zsh; do
+    if [ -x "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 CURRENT_SHELL="$(getent passwd "$REAL_USER" | cut -d: -f7)"
 if [ "$(basename "$CURRENT_SHELL")" = "zsh" ]; then
   echo "    login shell is already $CURRENT_SHELL, nothing to do"
 else
-  if ! command -v zsh >/dev/null 2>&1; then
+  ZSH_BIN="$(find_system_zsh || true)"
+  if [ -z "$ZSH_BIN" ]; then
     echo "    installing zsh"
     if command -v apt-get >/dev/null 2>&1; then
       sudo apt-get update -qq && sudo apt-get install -y zsh
@@ -73,12 +86,8 @@ else
       echo "    Unknown package manager. Install zsh yourself, then re-run ./bootstrap.sh."
       exit 1
     fi
+    ZSH_BIN="$(find_system_zsh || true)"
   fi
-  # Resolve after install, and skip Nix's zsh if it happens to be first on PATH.
-  ZSH_BIN=""
-  for candidate in /usr/bin/zsh /bin/zsh /usr/local/bin/zsh; do
-    [ -x "$candidate" ] && ZSH_BIN="$candidate" && break
-  done
   if [ -z "$ZSH_BIN" ]; then
     echo "    zsh installed but not found in a system path. Set your shell yourself."
     exit 1
