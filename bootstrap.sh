@@ -10,13 +10,21 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 trap 'echo; echo "==> BOOTSTRAP FAILED at line $LINENO. The machine is only partly set up."; echo "    Fix the error above and re-run ./bootstrap.sh - it is safe to run again."' ERR
 
 echo "==> Step 1: Determinate Nix"
+NIX_PROFILE_SCRIPT=/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+# Only login shells get nix on PATH, so `ssh host ./bootstrap.sh`, cron, or any
+# non-login shell would see no nix and try to reinstall it over a working one.
+# Test the profile on disk, not the PATH.
+if [ -e "$NIX_PROFILE_SCRIPT" ]; then
+  # shellcheck disable=SC1090
+  . "$NIX_PROFILE_SCRIPT"
+fi
 if command -v nix >/dev/null 2>&1; then
   echo "    nix already installed, skipping"
 else
   curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
     | sh -s -- install --no-confirm
-  # shellcheck disable=SC1091
-  . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+  # shellcheck disable=SC1090
+  . "$NIX_PROFILE_SCRIPT"
 fi
 
 echo "==> Step 2: symlink this repo to ~/.dotfiles"
