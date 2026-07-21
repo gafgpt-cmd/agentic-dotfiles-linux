@@ -2,7 +2,11 @@
 
 Deliberate decisions in this repo - do NOT silently revert them:
 
-- `homebrew.onActivation.cleanup = "zap"` in `configuration.nix` is intentional. It forces the good habit of declaring every Homebrew package in the Nix config instead of installing things ad-hoc, which keeps the machine reproducible. Do not soften it to `uninstall` or `none`. Users are warned about its effect in README.md; this note is for anyone tempted to change the setting itself.
+- This is a Linux-only port of a macOS nix-darwin repo. Do not reintroduce nix-darwin, nix-homebrew, or `configuration.nix`. The macOS-to-Linux mapping is tabled at the end of README.md.
+- Standalone home-manager is a deliberate choice over NixOS: the target machines run their own distro (Debian 13/GNOME today) and only the user environment is managed here. Anything needing root or a system service is out of scope.
+- `herdr` is not in nixpkgs. It comes from its own upstream flake, pinned by tag in `flake.nix`. Bump the tag, do not vendor it.
+- `bootstrap.sh` step 5 uses the distro's zsh, not the Nix one, on purpose: a broken home-manager generation must never remove the login shell of a remote machine. Do not "simplify" it to `~/.nix-profile/bin/zsh`.
+- New packages go in `home.packages` in `home.nix`. Unfree ones need no extra work: `allowUnfree` is set on `pkgs` in `flake.nix`.
 - Never commit `.no-mistakes/` validation evidence to this public repo. `.no-mistakes/` is gitignored; if a validation pipeline stages evidence into a branch, drop it before merging.
 
 ## Maintaining this file

@@ -1,12 +1,14 @@
-{ config, pkgs, user, ... }:
+{ config, pkgs, user, herdr-pkg, ... }:
 
 let
   dotfiles = "${config.home.homeDirectory}/.dotfiles";
 in
 
 {
+  imports = [ ./gnome.nix ];
+
   home.username = user;
-  home.homeDirectory = "/Users/${user}";
+  home.homeDirectory = "/home/${user}";
   home.stateVersion = "24.11";
   home.packages = with pkgs; [
     # cli i use constantly
@@ -16,11 +18,18 @@ in
     jq        # json on the command line
     lazygit
     neovim
+    # apps that were Homebrew casks/brews on macOS
+    wezterm
+    claude-code
+    herdr-pkg
     # the font everything renders in
     nerd-fonts.hack
   ];
   fonts.fontconfig.enable = true;
   home.sessionVariables.EDITOR = "nvim";
+
+  # Standalone home-manager doesn't ship its own CLI unless asked; rebuild.sh needs it.
+  programs.home-manager.enable = true;
 
   programs.zsh = {
     enable = true;

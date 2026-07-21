@@ -1,39 +1,36 @@
 {
-  description = "dotfiles";
+  description = "dotfiles (Linux)";
 
   inputs = {
-    # Use `github:NixOS/nixpkgs/nixpkgs-26.05-darwin` to use Nixpkgs 26.05.
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
-    # Use `github:nix-darwin/nix-darwin/nix-darwin-26.05` to use Nixpkgs 26.05.
-    nix-darwin.url = "github:nix-darwin/nix-darwin/nix-darwin-26.05";
-    nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     home-manager.url = "github:nix-community/home-manager/release-26.05";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
 
-    nix-homebrew.url = "github:zhaofengli/nix-homebrew";
+    # herdr isn't in nixpkgs; upstream ships its own flake, Linux included.
+    herdr.url = "github:ogulcancelik/herdr/v0.7.4";
   };
 
-  outputs = inputs@{ self, nix-darwin, nix-homebrew, home-manager, nixpkgs }:
+  outputs = inputs@{ self, nixpkgs, home-manager, herdr }:
     let
       # The one username line to change if this isn't your machine.
-      # bootstrap.sh offers to rewrite this for you if your macOS username differs.
-      user = "kunchen";
+      # bootstrap.sh offers to rewrite this for you if your Linux username differs.
+      user = "mega01";
+      # Use "aarch64-linux" on ARM machines.
+      system = "x86_64-linux";
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true; # claude-code
+      };
     in
     {
-      darwinConfigurations."mac" = nix-darwin.lib.darwinSystem {
-        specialArgs = { inherit user; };
-        modules = [
-          ./configuration.nix
-          nix-homebrew.darwinModules.nix-homebrew
-          home-manager.darwinModules.home-manager
-          {
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.extraSpecialArgs = { inherit user; };
-            home-manager.users.${user} = import ./home.nix;
-          }
-        ];
+      homeConfigurations.${user} = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        extraSpecialArgs = {
+          inherit user;
+          herdr-pkg = herdr.packages.${system}.default;
+        };
+        modules = [ ./home.nix ];
       };
     };
 }
