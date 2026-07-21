@@ -28,6 +28,15 @@ in
   fonts.fontconfig.enable = true;
   home.sessionVariables.EDITOR = "nvim";
 
+  # Put the profiles on PATH ourselves instead of trusting the Nix installer's
+  # shell hook. Determinate writes that hook to /etc/zshrc, which Debian's zsh
+  # never reads (it uses /etc/zsh/zshrc), so an interactive shell ends up with a
+  # bare /usr/bin PATH and none of the packages above.
+  home.sessionPath = [
+    "$HOME/.nix-profile/bin"          # everything in home.packages
+    "/nix/var/nix/profiles/default/bin" # nix itself
+  ];
+
   # Standalone home-manager doesn't ship its own CLI unless asked; rebuild.sh needs it.
   programs.home-manager.enable = true;
 

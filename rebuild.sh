@@ -2,7 +2,7 @@
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
-# Linux only -- see the same guard in bootstrap.sh. This claims ~/.dotfiles on
+# Linux only, see the same guard in bootstrap.sh. This claims ~/.dotfiles on
 # the very next line, which on macOS hijacks the nix-darwin repo's pointer.
 if [ "$(uname -s)" != "Linux" ]; then
   echo "==> This config is Linux-only; you are on $(uname -s)." >&2
@@ -11,4 +11,9 @@ if [ "$(uname -s)" != "Linux" ]; then
 fi
 
 ln -sfn "$DIR" ~/.dotfiles
+
+# Never rely on the caller's PATH: a shell that predates the first switch, or one
+# where the Nix installer's shell hook never fired, has no home-manager on PATH
+# and this would die with "command not found" on an otherwise healthy machine.
+PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 exec home-manager switch -b backup --flake ~/.dotfiles#"$(whoami)"

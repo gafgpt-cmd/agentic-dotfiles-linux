@@ -149,6 +149,15 @@ done
 [ -L "$HOME/.zshrc" ] && rc=0 || rc=1
 check "~/.zshrc managed by home-manager" "not a symlink" "$rc"
 
+# The PATH line above is exactly what hid this failure for a whole install: the
+# binaries were all there, but no shell hook put them on a real shell's PATH, so
+# every check passed while an actual login shell saw none of them. Ask zsh.
+ZSH_CHECK="$(find_system_zsh || true)"
+if [ -n "$ZSH_CHECK" ]; then
+  "$ZSH_CHECK" -ic 'command -v home-manager' >/dev/null 2>&1 </dev/null && rc=0 || rc=1
+  check "interactive zsh sees the nix profile" "~/.nix-profile/bin missing from its PATH" "$rc"
+fi
+
 LOGIN_SHELL="$(getent passwd "$REAL_USER" | cut -d: -f7)"
 [ "$(basename "$LOGIN_SHELL")" = "zsh" ] && rc=0 || rc=1
 check "login shell is zsh" "still $LOGIN_SHELL" "$rc"
