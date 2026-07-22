@@ -13,21 +13,20 @@
 
   outputs = inputs@{ self, nixpkgs, home-manager, herdr }:
     let
-      # The one username line to change if this isn't your machine.
-      # bootstrap.sh offers to rewrite this for you if your Linux username differs.
-      user = "mega01";
-      # Use "aarch64-linux" on ARM machines.
-      system = "x86_64-linux";
+      # Impure on purpose: the same clone must work on any machine, any user,
+      # any CPU arch, with nothing machine-specific committed here. The scripts
+      # pass --impure; without it currentSystem (and $USER/$HOME in home.nix)
+      # are unavailable and evaluation fails with a clear error.
+      system = builtins.currentSystem;
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true; # claude-code
       };
     in
     {
-      homeConfigurations.${user} = home-manager.lib.homeManagerConfiguration {
+      homeConfigurations.default = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         extraSpecialArgs = {
-          inherit user;
           herdr-pkg = herdr.packages.${system}.default;
         };
         modules = [ ./home.nix ];

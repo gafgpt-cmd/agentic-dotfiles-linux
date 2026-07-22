@@ -42,39 +42,21 @@ echo "==> Step 2: symlink this repo to ~/.dotfiles"
 # has to exist before the first switch or the build will fail to find them.
 ln -sfn "$DIR" ~/.dotfiles
 
-echo "==> Step 3: personalize the configured username"
+echo "==> Step 3: first home-manager switch (pinned to release-26.05)"
 REAL_USER="$(whoami)"
-FLAKE_USER="$(sed -nE 's/^[[:space:]]*user = "([^"]+)";.*/\1/p' "$DIR/flake.nix" | head -n1)"
-if [ -z "$FLAKE_USER" ]; then
-  echo "    Could not find the single \"user = \" line in flake.nix."
-  echo "    Edit flake.nix yourself before continuing."
-  exit 1
-elif [ "$FLAKE_USER" != "$REAL_USER" ]; then
-  echo "    flake.nix is configured for user \"$FLAKE_USER\", but you are \"$REAL_USER\"."
-  read -r -p "    Rewrite flake.nix's \"user = \" line to \"$REAL_USER\"? [y/N] " REPLY
-  if [ "$REPLY" = "y" ] || [ "$REPLY" = "Y" ]; then
-    sed -i -E "s/^([[:space:]]*user = \")[^\"]+(\";.*)/\1${REAL_USER}\2/" "$DIR/flake.nix"
-    echo "    Updated. Review the change with: git diff flake.nix"
-  else
-    echo "    Skipped. Edit the single \"user = \" line in flake.nix yourself before continuing."
-    exit 1
-  fi
-else
-  echo "    flake.nix already matches \"$REAL_USER\", nothing to do."
-fi
-
-echo "==> Step 4: first home-manager switch (pinned to release-26.05)"
 # home-manager doesn't exist yet on a fresh machine, so run it straight from the
 # flake this once. After this, rebuild.sh works normally.
 # This fetches the home-manager tool from the release-26.05 branch, not the exact
 # flake.lock revision. The config it applies is still pinned by this repo's
 # flake.lock. No sudo: standalone home-manager only writes to your home dir.
+# --impure: the flake reads $USER, $HOME, and the CPU arch from the environment
+# so nothing machine-specific is ever committed to this repo.
 nix run github:nix-community/home-manager/release-26.05 -- \
-  switch -b backup --flake ~/.dotfiles#"$REAL_USER"
+  switch -b backup --impure --flake ~/.dotfiles#default
 # If this fails with "nix: command not found", open a new terminal
 # (Determinate adds nix to new shells' PATH) and re-run ./bootstrap.sh.
 
-echo "==> Step 5: make zsh the login shell"
+echo "==> Step 4: make zsh the login shell"
 # home-manager owns ~/.zshrc but cannot set the login shell outside NixOS, and
 # /etc/passwd is root-owned, so this needs the distro package manager + sudo.
 # Deliberately the distro's zsh, not Nix's: /usr/bin/zsh always exists, so a
@@ -120,9 +102,9 @@ else
   echo "    login shell set to $ZSH_BIN (takes effect on your next login)"
 fi
 
-echo "==> Step 6: verify"
+echo "==> Step 5: verify"
 # Assert the end state instead of trusting that every step above did its job.
-# Step 6 reports failures itself, so the blanket ERR trap would only add noise.
+# Step 5 reports failures itself, so the blanket ERR trap would only add noise.
 trap - ERR
 # The current shell predates the switch, so reach into the profile directly.
 PATH="$HOME/.nix-profile/bin:$PATH"
@@ -136,7 +118,7 @@ check() { # check <label> <condition-description> <0|1 ok>
   fi
 }
 
-for bin in nvim wezterm herdr claude rg fd fzf jq lazygit starship home-manager; do
+for bin in nvim wezterm herdr claude rg fd fzf jq lazygit mosh mosh-server starship home-manager; do
   command -v "$bin" >/dev/null 2>&1 && rc=0 || rc=1
   check "$bin installed" "missing from ~/.nix-profile/bin" "$rc"
 done

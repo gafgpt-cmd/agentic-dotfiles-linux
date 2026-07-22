@@ -16,4 +16,6 @@ ln -sfn "$DIR" ~/.dotfiles
 # where the Nix installer's shell hook never fired, has no home-manager on PATH
 # and this would die with "command not found" on an otherwise healthy machine.
 PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
-exec home-manager switch -b backup --flake ~/.dotfiles#"$(whoami)"
+# --impure: the flake reads $USER, $HOME, and the CPU arch at switch time, so
+# the same clone works on any machine with nothing machine-specific committed.
+exec home-manager switch -b backup --impure --flake ~/.dotfiles#default

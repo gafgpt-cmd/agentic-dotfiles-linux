@@ -1,14 +1,21 @@
-{ config, pkgs, user, herdr-pkg, ... }:
+{ config, pkgs, herdr-pkg, ... }:
 
 let
   dotfiles = "${config.home.homeDirectory}/.dotfiles";
+  # Taken from the environment so no username or home path is ever committed.
+  # Needs --impure (rebuild.sh and bootstrap.sh pass it); pure eval sees "".
+  fromEnv = name:
+    let v = builtins.getEnv name; in
+    if v == "" then
+      throw "$${name} is empty. Run ./rebuild.sh, or pass --impure to home-manager/nix."
+    else v;
 in
 
 {
   imports = [ ./gnome.nix ];
 
-  home.username = user;
-  home.homeDirectory = "/home/${user}";
+  home.username = fromEnv "USER";
+  home.homeDirectory = fromEnv "HOME";
   home.stateVersion = "24.11";
   home.packages = with pkgs; [
     # cli i use constantly
@@ -17,6 +24,7 @@ in
     fzf       # fuzzy finder
     jq        # json on the command line
     lazygit
+    mosh      # ssh that survives roaming/sleep; also provides mosh-server for inbound
     neovim
     # apps that were Homebrew casks/brews on macOS
     wezterm

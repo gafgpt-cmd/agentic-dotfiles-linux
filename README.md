@@ -3,13 +3,15 @@
 Linux port of [kunchenguid/dotfiles](https://github.com/kunchenguid/dotfiles), managed with standalone home-manager.
 One repo, one command, and a fresh Linux box ends up configured the same way every time.
 
-Tested on Debian 13 (trixie) with GNOME. Any systemd distro should work: the only distro-aware code is the zsh install in `bootstrap.sh` step 5 (apt, dnf, pacman).
+Tested on Debian 13 (trixie) with GNOME. Any systemd distro should work: the only distro-aware code is the zsh install in `bootstrap.sh` step 4 (apt, dnf, pacman).
+
+Nothing machine-specific is committed: username, home directory, and CPU architecture are read from the environment at switch time (hence `--impure` in the scripts). Clone it on any Linux box and run it as any user.
 
 ## What you get
 
 Running the switch builds:
 
-- Nix user packages (ripgrep, fd, fzf, jq, lazygit, Neovim, WezTerm, Claude Code, herdr, Hack Nerd Font)
+- Nix user packages (ripgrep, fd, fzf, jq, lazygit, Mosh, Neovim, WezTerm, Claude Code, herdr, Hack Nerd Font)
 - GNOME settings via dconf (dark theme, fast key repeat, tap to click, Nautilus list view)
 - Shell (zsh, aliases, starship prompt)
 - Editor (Neovim config with the rose-pine moon theme)
@@ -18,8 +20,7 @@ Running the switch builds:
 
 ## Prerequisites
 
-- x86_64 Linux, by default.
-- ARM: set `system = "aarch64-linux";` in `flake.nix` (the comment right there tells you the same thing).
+- Linux (x86_64 or ARM; the architecture is detected at switch time).
 
 ## Fresh-machine setup
 
@@ -36,34 +37,33 @@ Before you run it: review "Make it yours" below.
 ./bootstrap.sh
 ```
 
-`bootstrap.sh` does six things, in order.
-It is idempotent: re-running it on a configured machine is a no-op that ends in a green step 6.
+`bootstrap.sh` does five things, in order.
+It is idempotent: re-running it on a configured machine is a no-op that ends in a green step 5.
 
 1. Installs Determinate Nix, if it isn't already installed.
 2. Symlinks this repo to `~/.dotfiles`.
    This has to happen before the first build, because `home.nix` points at config files through `~/.dotfiles`.
-3. Checks the `user` configured in `flake.nix` against your actual username, and offers to fix it for you if they differ.
-4. Runs the first `home-manager switch`.
-   It fetches the `home-manager` tool from the release-26.05 branch, then applies this repo's locked flake config.
+3. Runs the first `home-manager switch`.
+   It fetches the `home-manager` tool from the release-26.05 branch, then applies this repo's locked flake config for your user (read from the environment, nothing to edit).
    No sudo: standalone home-manager only writes inside your home directory.
-5. Installs zsh from the distro package manager and makes it your login shell.
+4. Installs zsh from the distro package manager and makes it your login shell.
    Deliberately the distro's zsh and not Nix's: `/usr/bin/zsh` always exists, so a broken home-manager generation can never lock you out of an SSH login.
    `~/.zshrc` itself is fully managed by home-manager either way.
-6. Verifies the end state (binaries, edit-in-place symlinks, managed `~/.zshrc`, login shell) and exits non-zero listing whatever failed.
+5. Verifies the end state (binaries, edit-in-place symlinks, managed `~/.zshrc`, login shell) and exits non-zero listing whatever failed.
    Any earlier step that dies also prints a `BOOTSTRAP FAILED` banner, so a partial setup can't be mistaken for a finished one.
 
-It asks for your sudo password (steps 1 and 5). Nothing else is manual: log out, log back in, and the machine is done.
+It asks for your sudo password (steps 1 and 4). Nothing else is manual: log out, log back in, and the machine is done.
 
 After that, `home-manager` exists and you're on the normal workflow below.
 
 ### Validate without applying
 
 ```sh
-nix flake check --no-build
-nix build .#homeConfigurations.mega01.activationPackage --dry-run
+nix flake check --no-build --impure
+nix build .#homeConfigurations.default.activationPackage --dry-run --impure
 ```
 
-Substitute your username for `mega01`.
+`--impure` is required: the flake reads `$USER`, `$HOME`, and the CPU architecture from the environment.
 
 ## Daily use
 
@@ -73,11 +73,24 @@ Edit the config files in place, then apply:
 ./rebuild.sh
 ```
 
+### Connecting with Mosh
+
+The switch installs `mosh-server`, so from any machine with a mosh client:
+
+```sh
+mosh <host>
+```
+
+Two things must hold, and both are set up by bootstrap:
+
+- The remote login shell is zsh with the home-manager `~/.zshenv`: mosh starts `mosh-server` through a non-interactive shell, and that is what puts `~/.nix-profile/bin` on its PATH.
+- UDP ports 60000-61000 reach the machine (mosh's transport). If a firewall blocks them, open a range and pass it: `mosh -p 60000:60010 <host>`.
+
+If the client reports `mosh-server: command not found`, bypass PATH: `mosh --server='.nix-profile/bin/mosh-server' <host>`.
+
 ## Make it yours
 
-- **Username**: run `./bootstrap.sh` (it detects your username and offers to set it) OR change the single `user = "mega01"` line in `flake.nix`.
-  Everything else (`home.nix`, home directory paths, the flake output name) is threaded from that one variable.
-- **CPU architecture**: `system` in `flake.nix`.
+Username, home directory, and CPU architecture need no editing: they come from the environment at switch time.
 
 **Git identity:** this config deliberately does not set your git name or email.
 Git will stop your first commit and tell you to set them (`git config --global user.name "Your Name"` and `git config --global user.email you@example.com`).
