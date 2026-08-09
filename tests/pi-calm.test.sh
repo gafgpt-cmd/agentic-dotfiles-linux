@@ -96,9 +96,14 @@ have_pi_package() {
 # manages once managePiResources is on.
 ADOPTED_PI_PROFILE=$(dotfiles_hm_profile 'managePiResources = true;')
 
-pi_adopted_files() {
-  dotfiles_hm_targets "$ADOPTED_PI_PROFILE" \
-    || fail "could not evaluate a Pi-managed Home Manager profile"
+PI_ADOPTED_FILES=""
+load_pi_adopted_files() {
+  if [ -z "$PI_ADOPTED_FILES" ]; then
+    PI_ADOPTED_FILES=$(dotfiles_hm_targets "$ADOPTED_PI_PROFILE") \
+      || fail "could not evaluate a Pi-managed Home Manager profile"
+    jq -e 'length > 0' >/dev/null <<<"$PI_ADOPTED_FILES" \
+      || fail "the Pi-managed profile manages no files, so its ownership guards prove nothing"
+  fi
 }
 
 pi_extensions_link() {
@@ -138,19 +143,20 @@ test_zero_coupling_and_state_file() {
     grep -q "Copyright (c) 2026 Kun Chen" "$file" || fail "$file lost its copyright attribution header"
   done
 
-  # The runtime preference file must never be tracked or Home Manager managed.
+  # Runtime state and credentials stay the user's, so Home Manager must own
+  # neither them nor any directory above them.
   if git -C "$ROOT" ls-files --error-unmatch home/.pi/agent/calm >/dev/null 2>&1; then
     fail "the Calm state file is tracked in the repository"
   fi
-  jq -e 'index(".pi/agent/calm") == null' >/dev/null <<<"$(pi_adopted_files)" \
-    || fail "Home Manager manages the Calm state file"
+  load_pi_adopted_files
+  local runtime_path
+  for runtime_path in .pi/agent/calm .pi/agent/auth.json; do
+    if dotfiles_owns "$PI_ADOPTED_FILES" "$runtime_path"; then
+      fail "Home Manager adopts ~/$runtime_path, directly or through an ancestor"
+    fi
+  done
   git -C "$ROOT" check-ignore -q home/.pi/agent/calm \
     || fail "git does not ignore the Calm state file"
-
-  # The shipped tree never references upstream paths or identifiers in code.
-  assert_not_contains "$(cat "$CALM_DIR/index.ts")" "pi.events" "index.ts emits on a shared event bus"
-  assert_not_contains "$(cat "$CALM_DIR/index.ts")" "registerEntryRenderer" "index.ts registers a synthetic entry renderer"
-  assert_not_contains "$(cat "$CALM_DIR/index.ts")" "InteractiveMode" "index.ts patches user-row layout"
 
   pass "zero coupling: no forbidden identifiers, attribution limited to license headers, state file untracked and unmanaged"
 }
@@ -158,9 +164,11 @@ test_zero_coupling_and_state_file() {
 test_static_typescript_and_repo_wiring() {
   # Home Manager links the extensions directory as a whole, so the calm
   # subdirectory auto-loads without any new declaration.
-  jq -e 'index(".pi/agent/extensions")' >/dev/null <<<"$(pi_adopted_files)" \
+  load_pi_adopted_files
+  jq -e 'index(".pi/agent/extensions")' >/dev/null <<<"$PI_ADOPTED_FILES" \
     || fail "Home Manager no longer links ~/.pi/agent/extensions"
-  jq -e 'index(".pi/agent/extensions/calm") == null' >/dev/null <<<"$(pi_adopted_files)" \
+  jq -e '[ .[] | select(startswith(".pi/agent/extensions/")) ] | length == 0' >/dev/null \
+    <<<"$PI_ADOPTED_FILES" \
     || fail "calm needs a declaration of its own instead of auto-loading"
   [ "$(readlink "$(pi_extensions_link)")" = "$HOME/.dotfiles/home/.pi/agent/extensions" ] \
     || fail "the Pi extensions link no longer points at this repo's extensions directory"
@@ -245,7 +253,8 @@ check(
 
 let calmCommand;
 const handlers = new Map();
-const pi = {
+const piSurface = new Set();
+const piApi = {
   on(event, handler) {
     const existing = handlers.get(event) ?? [];
     existing.push(handler);
@@ -256,6 +265,17 @@ const pi = {
   },
   registerTool() {},
 };
+// Anything Calm reaches for beyond this surface - a shared event bus, a
+// synthetic entry renderer - throws here instead of silently working.
+const pi = new Proxy(piApi, {
+  get(target, key, receiver) {
+    if (typeof key === "string") {
+      if (!Object.hasOwn(target, key)) throw new Error(`Calm reached for pi.${key}, outside the supported API`);
+      piSurface.add(key);
+    }
+    return Reflect.get(target, key, receiver);
+  },
+});
 extension.default(pi);
 check(!!calmCommand, "Calm command was not registered");
 for (const event of ["session_start", "agent_start", "agent_settled", "session_shutdown"]) {
@@ -346,6 +366,11 @@ check(
 );
 check(!visibility.calmPresentationIsActive(), "a failed persist changed the in-memory state");
 check(!existsSync(readonlyPreferencePath), "a failed persist left a state file");
+
+check(
+  [...piSurface].sort().join(",") === "on,registerCommand",
+  `Calm used an unexpected Pi API surface: ${[...piSurface].sort().join(",")}`,
+);
 JS
 )
   status=$?
@@ -370,24 +395,53 @@ import { pathToFileURL } from "node:url";
 
 process.env.PI_CODING_AGENT_DIR = process.env.AGENT_DIR;
 const root = process.env.PI_PACKAGE_DIR;
-const [{ AgentSession, AssistantMessageComponent, ToolExecutionComponent, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition }, { initTheme }, { Text }] = await Promise.all([
+const [{ AgentSession, AssistantMessageComponent, InteractiveMode, ToolExecutionComponent, UserMessageComponent, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition }, { initTheme }, { Text }] = await Promise.all([
   import("@earendil-works/pi-coding-agent"),
   import(pathToFileURL(`${root}/dist/modes/interactive/theme/theme.js`).href),
   import("@earendil-works/pi-tui"),
 ]);
 initTheme("dark");
+const check = (condition, message) => { if (!condition) throw new Error(message); };
+
+// Recorded before Calm loads, so patching either one is observable.
+const snapshotPrototype = (klass) => new Map(Object.getOwnPropertyNames(klass.prototype).map((key) => {
+  const descriptor = Object.getOwnPropertyDescriptor(klass.prototype, key);
+  return [key, [descriptor.value, descriptor.get, descriptor.set]];
+}));
+const prototypeIsUnchanged = (klass, before) => {
+  const now = snapshotPrototype(klass);
+  if (now.size !== before.size) return false;
+  for (const [key, members] of before) {
+    const current = now.get(key);
+    if (!current || current.some((member, index) => member !== members[index])) return false;
+  }
+  return true;
+};
+const interactiveModeBefore = snapshotPrototype(InteractiveMode);
+const userRowPrototypeBefore = snapshotPrototype(UserMessageComponent);
+const userRowBefore = JSON.stringify(new UserMessageComponent("REAL_USER_PROMPT").render(100));
+
 const extension = await import(pathToFileURL(process.env.EXT).href);
 const visibility = await import(pathToFileURL(`${process.cwd()}/calm/lib/visibility.ts`).href);
-const check = (condition, message) => { if (!condition) throw new Error(message); };
 
 const tools = [];
 const handlers = new Map();
+const piSurface = new Set();
 let command;
-const pi = {
+const piApi = {
   on(event, handler) { const list = handlers.get(event) ?? []; list.push(handler); handlers.set(event, list); },
   registerCommand(name, value) { if (name === "calm") command = value; },
   registerTool(tool) { tools.push(tool); },
 };
+const pi = new Proxy(piApi, {
+  get(target, key, receiver) {
+    if (typeof key === "string") {
+      if (!Object.hasOwn(target, key)) throw new Error(`Calm reached for pi.${key}, outside the supported API`);
+      piSurface.add(key);
+    }
+    return Reflect.get(target, key, receiver);
+  },
+});
 extension.default(pi);
 check(tools.length === 0, "Calm replaced active tool definitions");
 const ui = {
@@ -417,6 +471,10 @@ check(!hiddenAssistant.includes("PRIVATE_REASONING") && hiddenAssistant.includes
 assistant.setHideThinkingBlock(false);
 check(assistant.render(100).join("\\n").includes("PRIVATE_REASONING"), "expanding thinking did not restore its original content");
 assistant.setHideThinkingBlock(true);
+
+check(prototypeIsUnchanged(InteractiveMode, interactiveModeBefore), "Calm patched the interactive mode");
+check(prototypeIsUnchanged(UserMessageComponent, userRowPrototypeBefore), "Calm patched the user-row component");
+check(JSON.stringify(new UserMessageComponent("REAL_USER_PROMPT").render(100)) === userRowBefore, "Calm changed how a user message renders");
 
 const renderUi = { requestRender() {} };
 const builtInFactories = [createReadToolDefinition, createBashToolDefinition, createEditToolDefinition, createWriteToolDefinition, createGrepToolDefinition, createFindToolDefinition, createLsToolDefinition];
@@ -467,6 +525,10 @@ await command.handler("", ctx);
 assistant.setHiddenThinkingLabel("Thinking...");
 check(!visibility.calmPresentationIsActive(), "Calm did not deactivate");
 check(assistant.render(100).join("\\n").includes("Thinking..."), "Calm off did not restore collapsed thinking label");
+check(
+  [...piSurface].sort().join(",") === "on,registerCommand",
+  `Calm used an unexpected Pi API surface: ${[...piSurface].sort().join(",")}`,
+);
 JS
 )
   status=$?
