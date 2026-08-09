@@ -65,7 +65,7 @@
           dconfKeys = builtins.attrNames cfg.dconf.settings;
           xfconfKeys = builtins.attrNames cfg.xfconf.settings;
           gtkEnabled = cfg.gtk.enable;
-          managedFiles = builtins.attrNames cfg.home.file;
+          managedFiles = map (file: file.target) (builtins.attrValues cfg.home.file);
           activationEntries = builtins.attrNames cfg.home.activation;
           plasmaManaged = cfg.programs ? plasma;
         }

@@ -204,11 +204,21 @@ jq -e . "$ROOT/home/.claude/settings.json" "$ROOT/home/.pi/agent/models.json" \
   "$ROOT/home/.pi/agent/settings.json" "$ROOT/home/.pi/agent/themes/rose-pine-moon.json" >/dev/null \
   || fail "managed JSON is invalid"
 
-managed_files=$(hm_eval home.file --apply builtins.attrNames | jq -r '.[]')
-for target in .zshrc .zshenv .profile .config/starship.toml .config/nvim .config/wezterm \
-  .config/herdr .pi/agent .claude/settings.json .claude/CLAUDE.md .codex/AGENTS.md \
-  .config/opencode/AGENTS.md .config/kdeglobals; do
-  assert_not_contains "$managed_files" "/$target" "safe profile unexpectedly owns ~/$target"
+managed_files=$(hm_eval home.file --apply 'fs: map (f: f.target) (builtins.attrValues fs)' \
+  | dotfiles_normalize_targets)
+adopted_files=$(dotfiles_hm_targets "$(dotfiles_hm_profile '
+  manageShell = true; manageNvim = true; manageWezterm = true; manageHerdr = true;
+  managePiResources = true; manageClaudeSettings = true; manageAgentInstructions = true;
+')")
+
+for target in "${DOTFILES_ADOPTABLE_PATHS[@]}"; do
+  dotfiles_owns "$adopted_files" "$target" \
+    || fail "adopting everything no longer owns ~/$target, so the guard below cannot fail"
+done
+for target in "${DOTFILES_PROTECTED_PATHS[@]}"; do
+  if dotfiles_owns "$managed_files" "$target"; then
+    fail "safe profile unexpectedly owns ~/$target"
+  fi
 done
 [ "$(hm_eval xfconf.settings)" = '{}' ] || fail "safe profile changes XFCE settings"
 [ "$(hm_eval dconf.settings)" = '{}' ] || fail "safe profile changes GNOME settings"
