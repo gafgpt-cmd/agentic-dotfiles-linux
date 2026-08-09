@@ -25,7 +25,7 @@ The committed profile is deliberately non-invasive: it installs the packages and
 
 [Home Manager](https://github.com/nix-community/home-manager) is a reproducible installer and configuration manager for one user account. Nix is the underlying package and build engine; Home Manager adds the user-environment layer that turns this repository into an activatable setup.
 
-A Nix flake is the project interface that Nix reads. It consists of `flake.nix`, which declares the external inputs and the configurations or other outputs the project provides, and `flake.lock`, which records the exact revision of every input. The part after `#` in a flake reference selects an output; here, `#default` selects this repository's default Home Manager configuration. `--impure` only allows this flake to read `USER`, `HOME`, and `builtins.currentSystem` for the current machine. External inputs remain locked by `flake.lock`.
+A Nix flake is the project interface that Nix reads. It consists of `flake.nix`, which declares the external inputs and the configurations or other outputs the project provides, and `flake.lock`, which records the exact revision of every input. The part after `#` in a flake reference selects an output; here, `#default` selects this repository's default Home Manager configuration. `--impure` broadly permits access to mutable paths and repositories; this flake currently uses that permission only to read `USER`, `HOME`, and `builtins.currentSystem` for the current machine. External inputs remain locked by `flake.lock`.
 
 ```text
 flake.nix + flake.lock + home.nix + profile.nix
