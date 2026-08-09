@@ -112,11 +112,15 @@ dotfiles_hm_targets() {
     | dotfiles_normalize_targets
 }
 
-# Home Manager owns a path when it manages that exact target or anything below it.
+# Home Manager owns a path when it manages that exact target, anything below it,
+# or any ancestor of it: managing ~/.pi/agent adopts ~/.pi/agent/calm with it.
 dotfiles_owns() {
   local targets=$1 path=$2
-  jq -e --arg p "$path" \
-    'map(select(. == $p or startswith($p + "/"))) | length > 0' >/dev/null <<<"$targets"
+  jq -e --arg p "$path" '
+    map(select(. as $t |
+      $t == $p or ($t | startswith($p + "/")) or ($p | startswith($t + "/"))))
+    | length > 0
+  ' >/dev/null <<<"$targets"
 }
 
 # --- deterministic git fixtures ------------------------------------------------
