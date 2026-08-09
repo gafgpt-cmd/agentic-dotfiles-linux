@@ -53,7 +53,7 @@ It is idempotent: re-running it on a configured machine is a no-op that ends in 
 4. If `manageShell` is enabled, installs zsh from the distro package manager and makes it your login shell.
    Deliberately the distro's zsh and not Nix's: `/usr/bin/zsh` always exists, so a broken home-manager generation can never lock you out of an SSH login.
    With the safe default, the existing login shell, `~/.zshrc`, `~/.zshenv`, and starship config remain untouched.
-5. Verifies installed binaries plus only the files explicitly adopted in `profile.nix`, and exits non-zero listing whatever failed.
+5. Verifies installed binaries plus every enabled Home Manager file, including baseline environment/font files and profile-adopted config, and exits non-zero listing whatever failed.
    Any earlier step that dies also prints a `BOOTSTRAP FAILED` banner, so a partial setup can't be mistaken for a finished one.
 
 It asks for sudo only if Nix or the optional distro zsh package must be installed.
@@ -155,10 +155,10 @@ The flake exposes and builds six profiles: GNOME, XFCE, and KDE Plasma on both X
 | Profile | Settings backend | X11 | Wayland |
 | --- | --- | --- | --- |
 | GNOME | Home Manager dconf | Build-tested | Build-tested |
-| XFCE | Home Manager GTK/xfconf | Build-tested | Build-tested portable subset; [XFCE's Wayland session remains preliminary](https://wiki.xfce.org/releng/wayland_roadmap) |
+| XFCE | Home Manager xfconf; generic GTK files preserved | Build-tested | Build-tested portable subset; [XFCE's Wayland session remains preliminary](https://wiki.xfce.org/releng/wayland_roadmap) |
 | KDE Plasma | No KConfig ownership; existing settings preserved | Build-tested | Build-tested |
 
-`displayServer = "x11"` makes an adopted WezTerm config use X11. `displayServer = "wayland"` enables its [native Wayland backend](https://wezterm.org/config/lua/config/enable_wayland.html). `auto` keeps WezTerm's own detection. GNOME preferences are shared by both session types. KDE compatibility leaves every KConfig preference untouched. XFCE's Wayland profile omits X11-only XSettings and xfwm4 keys while retaining GTK, Thunar, and xfdesktop preferences.
+`displayServer = "x11"` makes an adopted WezTerm config use X11. `displayServer = "wayland"` enables its [native Wayland backend](https://wezterm.org/config/lua/config/enable_wayland.html). `auto` keeps WezTerm's own detection. GNOME preferences are shared by both session types. KDE compatibility leaves every KConfig preference untouched. XFCE leaves generic GTK files untouched; its Wayland profile also omits X11-only XSettings and xfwm4 keys while retaining Thunar and xfdesktop preferences.
 
 ## Telemetry policy
 

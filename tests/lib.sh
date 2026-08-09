@@ -108,7 +108,7 @@ dotfiles_normalize_targets() {
 
 dotfiles_hm_targets() {
   dotfiles_nix eval --json --impure \
-    --expr "map (f: f.target) (builtins.attrValues ($1).config.home.file)" \
+    --expr "map (f: f.target) (builtins.filter (f: f.enable) (builtins.attrValues ($1).config.home.file))" \
     | dotfiles_normalize_targets
 }
 
