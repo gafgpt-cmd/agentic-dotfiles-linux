@@ -69,7 +69,7 @@ switch_args=$(cat "$switch_home/switch-args")
 for expected in switch -b backup --impure --flake; do
   assert_contains "$switch_args" "$expected" "rebuild.sh does not pass $expected to home-manager"
 done
-assert_contains "$switch_args" '.dotfiles#default' "rebuild.sh switches to another flake output"
+assert_contains "$switch_args" "$ROOT#default" "rebuild.sh switches to another flake output"
 assert_contains "$(cat "$switch_home/switch-nix-config")" 'experimental-features = nix-command flakes' \
   "rebuild.sh does not enable flakes for the home-manager child process"
 

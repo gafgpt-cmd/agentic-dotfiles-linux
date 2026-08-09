@@ -29,4 +29,4 @@ fi
 PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 # --impure: the flake reads $USER, $HOME, and the CPU arch at switch time, so
 # the same clone works on any machine with nothing machine-specific committed.
-exec home-manager switch -b backup --impure --flake ~/.dotfiles#default
+exec home-manager switch -b backup --impure --flake "$DIR#default"
