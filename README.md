@@ -19,7 +19,7 @@ Running the switch builds:
 - Selective Pi resources: theme, terminal-title extension, Calm mode, model overrides, and pinned packages
 - Telemetry and error-reporting opt-outs across the managed agent and developer tools
 
-The committed profile is deliberately non-invasive: it installs the packages and privacy controls but adopts no existing app, shell, agent, or desktop configuration. Each config family has a separate opt-in switch in `profile.nix`.
+The committed profile is deliberately non-invasive; the baseline ownership is described below, and [Make it yours](#make-it-yours) lists the opt-in switches.
 
 ## What Home Manager does here
 
@@ -41,7 +41,7 @@ flake.nix + flake.lock + home.nix + profile.nix
 
 In this repository:
 
-- `flake.nix` declares the nixpkgs, Home Manager, Pi-package, and herdr inputs and exposes the configurations Home Manager can build; `flake.lock` locks those inputs to exact revisions.
+- `flake.nix` declares the nixpkgs, Home Manager, separate nixpkgs snapshot for Pi, and herdr inputs and exposes the configurations Home Manager can build; `flake.lock` locks those inputs to exact revisions.
 - `home.nix` declares the programs, font, privacy controls, PATH entries, and optional config-file links that should exist for the current user.
 - `profile.nix` decides which existing shell, editor, terminal, agent, and desktop settings Home Manager is allowed to adopt.
 - `home-manager switch` evaluates those declarations, downloads or builds the required packages in the Nix store, creates a new generation, and activates it for the current user.
@@ -49,7 +49,12 @@ In this repository:
 
 Each switch creates a generation: a versioned snapshot of the store-managed packages and links that Home Manager activated. Older generations can restore that managed state. Adopted configurations use links to the live files in this repository, however, so a Home Manager rollback does not restore earlier contents of those files; use Git to roll their contents back.
 
-With the checked-in safe profile, Home Manager currently owns the installed toolset and Home Manager CLI, Hack Nerd Font integration, the Nix profile entries added to PATH, telemetry opt-outs in shell and graphical sessions, `AGENTIC_DISPLAY_SERVER=auto` in those sessions, and the Codex analytics and OpenTelemetry privacy keys. It does **not** take over the existing zsh, Neovim, WezTerm, herdr, Pi, Claude, agent-instruction, or desktop configuration until the corresponding switch is enabled in `profile.nix`.
+With the checked-in safe profile (`desktop = "none"` and every `manage...` switch false), Home Manager:
+
+- Installs every package declared in `home.packages`, enables the Home Manager CLI, and installs Hack Nerd Font with user-level fontconfig integration.
+- Generates the user-environment setup that adds the Nix profiles to `PATH` and exports the telemetry opt-outs plus `AGENTIC_DISPLAY_SERVER=auto` to shell and systemd user sessions.
+- Runs the Codex privacy activation that preserves unrelated settings while enforcing the analytics and OpenTelemetry keys documented under [Telemetry policy](#telemetry-policy).
+- Adopts no existing shell, editor, terminal, agent, or desktop configuration. Those config families remain opt-in; [Make it yours](#make-it-yours) lists every switch and its scope.
 
 This is not a replacement for the Linux distribution. It does not manage the kernel, drivers, display manager, system-wide packages, or root services. Debian, Ubuntu, Fedora, or Arch still own the operating system; Home Manager owns only the selected user environment.
 
@@ -160,12 +165,9 @@ The `cc` and `co` aliases launch Claude and Codex with their normal configured p
 
 ## Repo tour
 
-- `flake.nix` - the entry point.
-  Wires up nixpkgs, home-manager, and the herdr flake, and declares the `homeConfigurations` output.
-- `profile.nix` - desktop choice and adoption switches for existing agent configuration.
-- `home.nix` - user-level config: shell, packages, prompt, and the symlinks described below.
+The files in the configuration-to-activation flow are explained under [What Home Manager does here](#what-home-manager-does-here).
+
 - `gnome.nix` / `xfce.nix` / `kde.nix` - optional Linux desktop compatibility modules.
-- `rebuild.sh` - re-applies the config after the first switch.
 - `home/` - edit-in-place app and agent resources.
 - `tests/` - Linux wiring, full desktop/session matrix, and Pi Calm behavior tests.
 
