@@ -8,13 +8,11 @@ TMP_ROOT=$(dotfiles_test_tmproot profile-matrix)
 cleanup() { dotfiles_test_cleanup "$TMP_ROOT"; }
 trap cleanup EXIT
 
-nix_run() { nix --extra-experimental-features 'nix-command flakes' "$@"; }
-
-matrix=$(nix_run eval --json --impure "path:$ROOT#lib.profileMatrix")
+matrix=$(dotfiles_nix eval --json --impure "path:$ROOT#lib.profileMatrix")
 
 # The desktop-less profile is the yardstick for "owns nothing of this desktop".
 neutral_files=$(dotfiles_hm_targets "$(dotfiles_hm_profile)")
-neutral_activation=$(nix_run eval --json --impure \
+neutral_activation=$(dotfiles_nix eval --json --impure \
   "path:$ROOT#homeConfigurations.default.config.home.activation" --apply builtins.attrNames | jq -S .)
 
 # Positive control: the same needles do trip once a profile adopts those paths.
@@ -100,7 +98,7 @@ find_lua() {
       return 0
     fi
   done
-  store=$(nix_run build --no-link --print-out-paths --impure --expr \
+  store=$(dotfiles_nix build --no-link --print-out-paths --impure --expr \
     "(builtins.getFlake \"path:$ROOT\").inputs.nixpkgs.legacyPackages.\${builtins.currentSystem}.lua")
   printf '%s/bin/lua\n' "$store"
 }
