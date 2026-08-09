@@ -10,8 +10,7 @@ trap cleanup EXIT
 
 command -v nix >/dev/null 2>&1 || fail "these tests need nix on PATH"
 
-nix_run() { nix --extra-experimental-features 'nix-command flakes' "$@"; }
-hm_eval() { nix_run eval --json --impure "path:$ROOT#homeConfigurations.default.config.$1" "${@:2}"; }
+hm_eval() { dotfiles_nix eval --json --impure "path:$ROOT#homeConfigurations.default.config.$1" "${@:2}"; }
 
 for script in "$ROOT/bootstrap.sh" "$ROOT/rebuild.sh" "$ROOT/home/.claude/statusline-command.sh"; do
   bash -n "$script" || fail "$(basename "$script") has invalid shell syntax"
@@ -120,10 +119,10 @@ jq -e 'index("disableCodexTelemetry")' >/dev/null \
   <<<"$(hm_eval home.activation --apply builtins.attrNames)" \
   || fail "the Codex privacy entry does not run during activation"
 
-codex_privacy=$(nix_run build --no-link --print-out-paths --impure "path:$ROOT#ensure-codex-privacy")/bin/ensure-codex-privacy
+codex_privacy=$(dotfiles_nix build --no-link --print-out-paths --impure "path:$ROOT#ensure-codex-privacy")/bin/ensure-codex-privacy
 [ -x "$codex_privacy" ] || fail "the Codex privacy activation entry did not build"
 
-codex_toml() { nix_run eval --json --impure --expr "builtins.fromTOML (builtins.readFile \"$1\")"; }
+codex_toml() { dotfiles_nix eval --json --impure --expr "builtins.fromTOML (builtins.readFile \"$1\")"; }
 run_codex_privacy() { # run_codex_privacy <codex-home>
   HOME="$TMP_ROOT/codex" CODEX_HOME="$1" "$codex_privacy"
 }
