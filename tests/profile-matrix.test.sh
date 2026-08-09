@@ -4,8 +4,19 @@ set -euo pipefail
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-matrix=$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
-  "path:$ROOT#lib.profileMatrix")
+TMP_ROOT=$(dotfiles_test_tmproot profile-matrix)
+cleanup() { dotfiles_test_cleanup "$TMP_ROOT"; }
+trap cleanup EXIT
+
+nix_run() { nix --extra-experimental-features 'nix-command flakes' "$@"; }
+
+matrix=$(nix_run eval --json --impure "path:$ROOT#lib.profileMatrix")
+
+# The desktop-less profile is the yardstick for "owns nothing of this desktop".
+neutral_files=$(nix_run eval --json --impure \
+  "path:$ROOT#homeConfigurations.default.config.home.file" --apply builtins.attrNames | jq -S .)
+neutral_activation=$(nix_run eval --json --impure \
+  "path:$ROOT#homeConfigurations.default.config.home.activation" --apply builtins.attrNames | jq -S .)
 
 expected_profiles='["gnome-wayland","gnome-x11","kde-wayland","kde-x11","xfce-wayland","xfce-x11"]'
 [ "$(jq -c 'keys' <<<"$matrix")" = "$expected_profiles" ] \
@@ -54,6 +65,14 @@ for desktop in gnome xfce kde; do
         if ! { [ "$dconf_count" -eq 0 ] && [ "$xfconf_count" -eq 0 ] && [ "$gtk_enabled" = false ]; }; then
           fail "$profile does not preserve existing KDE settings"
         fi
+        # KConfig stays user-owned: no plasma-manager module, and the footprint
+        # is byte-for-byte the desktop-less one, so nothing new writes ~/.config.
+        [ "$(jq -r --arg p "$profile" '.[$p].plasmaManaged' <<<"$matrix")" = false ] \
+          || fail "$profile hands KDE settings to plasma-manager"
+        [ "$(jq -S --arg p "$profile" '.[$p].managedFiles' <<<"$matrix")" = "$neutral_files" ] \
+          || fail "$profile manages files the desktop-less profile does not"
+        [ "$(jq -S --arg p "$profile" '.[$p].activationEntries' <<<"$matrix")" = "$neutral_activation" ] \
+          || fail "$profile adds an activation step that could write KConfig"
         ;;
     esac
 
@@ -64,13 +83,48 @@ for desktop in gnome xfce kde; do
   done
 done
 
-wezterm=$(cat "$ROOT/home/.config/wezterm/wezterm.lua")
-kde=$(cat "$ROOT/kde.nix")
-assert_not_contains "$kde" programs.plasma "KDE profile owns Plasma settings"
-assert_not_contains "$kde" kwriteconfig "KDE profile writes KConfig settings"
-assert_contains "$wezterm" 'display_server == "wayland"' "WezTerm has no Wayland selector"
-assert_contains "$wezterm" 'display_server == "x11"' "WezTerm has no X11 selector"
-assert_contains "$wezterm" 'config.enable_wayland = true' "WezTerm does not enable native Wayland"
-assert_contains "$wezterm" 'config.enable_wayland = false' "WezTerm does not force X11 when selected"
+# The profiles above only publish AGENTIC_DISPLAY_SERVER. Close the loop by
+# loading the real WezTerm config against a stub of the wezterm module and
+# reading back the backend it picked.
+find_lua() {
+  local candidate store
+  for candidate in lua lua5.4 lua5.3 lua5.2 luajit; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  store=$(nix_run build --no-link --print-out-paths --impure --expr \
+    "(builtins.getFlake \"path:$ROOT\").inputs.nixpkgs.legacyPackages.\${builtins.currentSystem}.lua")
+  printf '%s/bin/lua\n' "$store"
+}
+
+lua_bin=$(find_lua)
+harness="$TMP_ROOT/wezterm-harness.lua"
+cat >"$harness" <<'LUA'
+package.preload["wezterm"] = function()
+  return {
+    config_builder = function() return {} end,
+    font = function(family) return { family = family } end,
+    on = function() end,
+  }
+end
+local config = assert(loadfile(os.getenv("WEZTERM_CONFIG")))()
+io.write(tostring(config.enable_wayland), "\n")
+LUA
+
+wezterm_backend() { # wezterm_backend [display-server]
+  local config="$ROOT/home/.config/wezterm/wezterm.lua"
+  if [ "$#" -eq 0 ]; then
+    env -u AGENTIC_DISPLAY_SERVER WEZTERM_CONFIG="$config" "$lua_bin" "$harness"
+  else
+    env AGENTIC_DISPLAY_SERVER="$1" WEZTERM_CONFIG="$config" "$lua_bin" "$harness"
+  fi
+}
+
+[ "$(wezterm_backend wayland)" = true ] || fail "WezTerm does not enable native Wayland on a Wayland profile"
+[ "$(wezterm_backend x11)" = false ] || fail "WezTerm does not force X11 on an X11 profile"
+[ "$(wezterm_backend auto)" = nil ] || fail "the auto profile overrides WezTerm's own backend detection"
+[ "$(wezterm_backend)" = nil ] || fail "WezTerm picks a backend when no profile is exported"
 
 pass "GNOME and XFCE isolate settings; KDE preserves them; all evaluate on X11 and Wayland"

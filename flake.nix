@@ -66,6 +66,8 @@
           xfconfKeys = builtins.attrNames cfg.xfconf.settings;
           gtkEnabled = cfg.gtk.enable;
           managedFiles = builtins.attrNames cfg.home.file;
+          activationEntries = builtins.attrNames cfg.home.activation;
+          plasmaManaged = cfg.programs ? plasma;
         }
       ) matrixConfigurations;
 
