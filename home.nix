@@ -27,6 +27,9 @@ let
     HF_HUB_DISABLE_TELEMETRY = "1";
     DVC_NO_ANALYTICS = "true";
   };
+  displayVariables = {
+    AGENTIC_DISPLAY_SERVER = profile.displayServer;
+  };
   # Taken from the environment so no username or home path is ever committed.
   # Needs --impure (rebuild.sh and bootstrap.sh pass it); pure eval sees "".
   fromEnv = name:
@@ -39,12 +42,19 @@ in
 {
   imports =
     lib.optionals (profile.desktop == "gnome") [ ./gnome.nix ]
-    ++ lib.optionals (profile.desktop == "xfce") [ ./xfce.nix ];
+    ++ lib.optionals (profile.desktop == "xfce") [ ./xfce.nix ]
+    ++ lib.optionals (profile.desktop == "kde") [ ./kde.nix ];
 
-  assertions = [{
-    assertion = builtins.elem profile.desktop [ "none" "gnome" "xfce" ];
-    message = "profile.desktop must be one of: none, gnome, xfce";
-  }];
+  assertions = [
+    {
+      assertion = builtins.elem profile.desktop [ "none" "gnome" "xfce" "kde" ];
+      message = "profile.desktop must be one of: none, gnome, xfce, kde";
+    }
+    {
+      assertion = builtins.elem profile.displayServer [ "auto" "x11" "wayland" ];
+      message = "profile.displayServer must be one of: auto, x11, wayland";
+    }
+  ];
 
   home.username = fromEnv "USER";
   home.homeDirectory = fromEnv "HOME";
@@ -75,9 +85,10 @@ in
     nerd-fonts.hack
   ];
   fonts.fontconfig.enable = true;
-  home.sessionVariables = privacyVariables // lib.optionalAttrs profile.manageShell { EDITOR = "nvim"; };
+  home.sessionVariables = privacyVariables // displayVariables
+    // lib.optionalAttrs profile.manageShell { EDITOR = "nvim"; };
   # Graphical apps inherit privacy controls without requiring ownership of a custom shell.
-  systemd.user.sessionVariables = privacyVariables;
+  systemd.user.sessionVariables = privacyVariables // displayVariables;
 
   # Codex analytics defaults to on, so environment-wide OTEL controls are not enough.
   home.activation.disableCodexTelemetry = config.lib.dag.entryAfter [ "writeBoundary" ] ''
