@@ -5,13 +5,18 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
+# Flakes are still experimental in stock Nix. Keep them enabled for both the
+# direct `nix run` below and the Nix commands launched by home-manager.
+export NIX_CONFIG="${NIX_CONFIG:-}
+experimental-features = nix-command flakes"
+
 # Linux only. On macOS this used to run far enough to claim ~/.dotfiles (step 2)
 # before failing, which silently repointed the nix-darwin repo's edit-in-place
 # symlinks at this clone and left Claude Code with no settings at all.
 if [ "$(uname -s)" != "Linux" ]; then
   echo "==> This bootstrap is Linux-only (it installs zsh via apt/dnf/pacman and"
-  echo "    configures GNOME via dconf); you are on $(uname -s)."
-  echo "    For macOS use the nix-darwin repo: github.com/GuillaumeTaffin/dotfiles"
+  echo "    applies the selected Linux desktop module); you are on $(uname -s)."
+  echo "    For macOS use the nix-darwin repo: github.com/kunchenguid/dotfiles"
   exit 1
 fi
 
@@ -37,10 +42,26 @@ else
   . "$NIX_PROFILE_SCRIPT"
 fi
 
+profile_enabled() {
+  (cd "$DIR" && nix eval --raw --expr "if (import ./profile.nix).$1 then \"1\" else \"0\"")
+}
+MANAGE_SHELL="$(profile_enabled manageShell)"
+MANAGE_NVIM="$(profile_enabled manageNvim)"
+MANAGE_WEZTERM="$(profile_enabled manageWezterm)"
+MANAGE_HERDR="$(profile_enabled manageHerdr)"
+MANAGE_PI="$(profile_enabled managePiResources)"
+
 echo "==> Step 2: symlink this repo to ~/.dotfiles"
 # home.nix resolves its mkOutOfStoreSymlink paths through ~/.dotfiles, so this
 # has to exist before the first switch or the build will fail to find them.
-ln -sfn "$DIR" ~/.dotfiles
+if [ -L "$HOME/.dotfiles" ] && [ "$(readlink -f "$HOME/.dotfiles")" = "$DIR" ]; then
+  echo "    $HOME/.dotfiles already points here, skipping"
+elif [ -e "$HOME/.dotfiles" ] || [ -L "$HOME/.dotfiles" ]; then
+  echo "    Refusing to replace existing $HOME/.dotfiles. Move it yourself or use that repo." >&2
+  exit 1
+else
+  ln -s "$DIR" "$HOME/.dotfiles"
+fi
 
 echo "==> Step 3: first home-manager switch (pinned to release-26.05)"
 REAL_USER="$(whoami)"
@@ -73,33 +94,37 @@ find_system_zsh() {
   return 1
 }
 
-CURRENT_SHELL="$(getent passwd "$REAL_USER" | cut -d: -f7)"
-if [ "$(basename "$CURRENT_SHELL")" = "zsh" ]; then
-  echo "    login shell is already $CURRENT_SHELL, nothing to do"
+if [ "$MANAGE_SHELL" != "1" ]; then
+  echo "    skipped: profile.manageShell is false; existing shell files and login shell stay untouched"
 else
-  ZSH_BIN="$(find_system_zsh || true)"
-  if [ -z "$ZSH_BIN" ]; then
-    echo "    installing zsh"
-    if command -v apt-get >/dev/null 2>&1; then
-      sudo apt-get update -qq && sudo apt-get install -y zsh
-    elif command -v dnf >/dev/null 2>&1; then
-      sudo dnf install -y zsh
-    elif command -v pacman >/dev/null 2>&1; then
-      sudo pacman -S --noconfirm zsh
-    else
-      echo "    Unknown package manager. Install zsh yourself, then re-run ./bootstrap.sh."
+  CURRENT_SHELL="$(getent passwd "$REAL_USER" | cut -d: -f7)"
+  if [ "$(basename "$CURRENT_SHELL")" = "zsh" ]; then
+    echo "    login shell is already $CURRENT_SHELL, nothing to do"
+  else
+    ZSH_BIN="$(find_system_zsh || true)"
+    if [ -z "$ZSH_BIN" ]; then
+      echo "    installing zsh"
+      if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo apt-get install -y zsh
+      elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y zsh
+      elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -S --noconfirm zsh
+      else
+        echo "    Unknown package manager. Install zsh yourself, then re-run ./bootstrap.sh."
+        exit 1
+      fi
+      ZSH_BIN="$(find_system_zsh || true)"
+    fi
+    if [ -z "$ZSH_BIN" ]; then
+      echo "    zsh installed but not found in a system path. Set your shell yourself."
       exit 1
     fi
-    ZSH_BIN="$(find_system_zsh || true)"
+    # chsh refuses any shell missing from /etc/shells.
+    grep -qxF "$ZSH_BIN" /etc/shells || echo "$ZSH_BIN" | sudo tee -a /etc/shells >/dev/null
+    sudo chsh -s "$ZSH_BIN" "$REAL_USER"
+    echo "    login shell set to $ZSH_BIN (takes effect on your next login)"
   fi
-  if [ -z "$ZSH_BIN" ]; then
-    echo "    zsh installed but not found in a system path. Set your shell yourself."
-    exit 1
-  fi
-  # chsh refuses any shell missing from /etc/shells.
-  grep -qxF "$ZSH_BIN" /etc/shells || echo "$ZSH_BIN" | sudo tee -a /etc/shells >/dev/null
-  sudo chsh -s "$ZSH_BIN" "$REAL_USER"
-  echo "    login shell set to $ZSH_BIN (takes effect on your next login)"
 fi
 
 echo "==> Step 5: verify"
@@ -118,31 +143,40 @@ check() { # check <label> <condition-description> <0|1 ok>
   fi
 }
 
-for bin in nvim wezterm herdr claude rg fd fzf jq lazygit mosh mosh-server starship home-manager; do
+VERIFY_BINS=(nvim wezterm herdr claude pi git gh tmux mise uv tsc shellcheck shfmt rg fd fzf jq lazygit mosh mosh-server home-manager)
+[ "$MANAGE_SHELL" = "1" ] && VERIFY_BINS+=(starship)
+for bin in "${VERIFY_BINS[@]}"; do
   command -v "$bin" >/dev/null 2>&1 && rc=0 || rc=1
   check "$bin installed" "missing from ~/.nix-profile/bin" "$rc"
 done
 
-for link in .config/nvim .config/wezterm .config/herdr .claude/settings.json .claude/statusline-command.sh; do
+VERIFY_LINKS=()
+[ "$MANAGE_NVIM" = "1" ] && VERIFY_LINKS+=(.config/nvim)
+[ "$MANAGE_WEZTERM" = "1" ] && VERIFY_LINKS+=(.config/wezterm)
+[ "$MANAGE_HERDR" = "1" ] && VERIFY_LINKS+=(.config/herdr)
+if [ "$MANAGE_PI" = "1" ]; then
+  VERIFY_LINKS+=(.pi/agent/themes .pi/agent/extensions .pi/agent/models.json .pi/agent/settings.json)
+fi
+for link in "${VERIFY_LINKS[@]}"; do
   [ "$(readlink -f "$HOME/$link" 2>/dev/null)" = "$DIR/home/$link" ] && rc=0 || rc=1
-  check "~/$link -> repo" "not an edit-in-place symlink into $DIR" "$rc"
+  check "$HOME/$link -> repo" "not an edit-in-place symlink into $DIR" "$rc"
 done
 
-[ -L "$HOME/.zshrc" ] && rc=0 || rc=1
-check "~/.zshrc managed by home-manager" "not a symlink" "$rc"
+if [ "$MANAGE_SHELL" = "1" ]; then
+  [ -L "$HOME/.zshrc" ] && rc=0 || rc=1
+  check "$HOME/.zshrc managed by home-manager" "not a symlink" "$rc"
 
-# The PATH line above is exactly what hid this failure for a whole install: the
-# binaries were all there, but no shell hook put them on a real shell's PATH, so
-# every check passed while an actual login shell saw none of them. Ask zsh.
-ZSH_CHECK="$(find_system_zsh || true)"
-if [ -n "$ZSH_CHECK" ]; then
-  "$ZSH_CHECK" -ic 'command -v home-manager' >/dev/null 2>&1 </dev/null && rc=0 || rc=1
-  check "interactive zsh sees the nix profile" "~/.nix-profile/bin missing from its PATH" "$rc"
+  # Ask a real interactive shell rather than trusting the current process PATH.
+  ZSH_CHECK="$(find_system_zsh || true)"
+  if [ -n "$ZSH_CHECK" ]; then
+    "$ZSH_CHECK" -ic 'command -v home-manager' >/dev/null 2>&1 </dev/null && rc=0 || rc=1
+    check "interactive zsh sees the nix profile" "$HOME/.nix-profile/bin missing from its PATH" "$rc"
+  fi
+
+  LOGIN_SHELL="$(getent passwd "$REAL_USER" | cut -d: -f7)"
+  [ "$(basename "$LOGIN_SHELL")" = "zsh" ] && rc=0 || rc=1
+  check "login shell is zsh" "still $LOGIN_SHELL" "$rc"
 fi
-
-LOGIN_SHELL="$(getent passwd "$REAL_USER" | cut -d: -f7)"
-[ "$(basename "$LOGIN_SHELL")" = "zsh" ] && rc=0 || rc=1
-check "login shell is zsh" "still $LOGIN_SHELL" "$rc"
 
 if [ "$FAILED" != "0" ]; then
   echo
@@ -151,5 +185,9 @@ if [ "$FAILED" != "0" ]; then
 fi
 
 echo
-echo "==> Done, all checks passed. Log out and back in to land in zsh."
+if [ "$MANAGE_SHELL" = "1" ]; then
+  echo "==> Done, all checks passed. Log out and back in to land in zsh."
+else
+  echo "==> Done, all checks passed. Existing shell and app configs were not adopted."
+fi
 echo "    Use ./rebuild.sh for future changes."

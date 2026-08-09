@@ -1,7 +1,32 @@
-{ config, pkgs, herdr-pkg, ... }:
+{ config, pkgs, lib, codexPrivacy, herdr-pkg, pi-pkg, profile, ... }:
 
 let
   dotfiles = "${config.home.homeDirectory}/.dotfiles";
+  privacyVariables = {
+    DO_NOT_TRACK = "1";
+    DISABLE_TELEMETRY = "1";
+    DISABLE_ERROR_REPORTING = "1";
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
+    OTEL_SDK_DISABLED = "true";
+    OTEL_TRACES_EXPORTER = "none";
+    OTEL_METRICS_EXPORTER = "none";
+    OTEL_LOGS_EXPORTER = "none";
+    PI_TELEMETRY = "0";
+    PI_SKIP_VERSION_CHECK = "1";
+    GNHF_TELEMETRY = "0";
+    NO_MISTAKES_TELEMETRY = "0";
+    LAVISH_AXI_TELEMETRY = "0";
+    HOMEBREW_NO_ANALYTICS = "1";
+    NEXT_TELEMETRY_DISABLED = "1";
+    ASTRO_TELEMETRY_DISABLED = "1";
+    TURBO_TELEMETRY_DISABLED = "1";
+    DOTNET_CLI_TELEMETRY_OPTOUT = "1";
+    POWERSHELL_TELEMETRY_OPTOUT = "1";
+    CHECKPOINT_DISABLE = "1";
+    SCARF_NO_ANALYTICS = "true";
+    HF_HUB_DISABLE_TELEMETRY = "1";
+    DVC_NO_ANALYTICS = "true";
+  };
   # Taken from the environment so no username or home path is ever committed.
   # Needs --impure (rebuild.sh and bootstrap.sh pass it); pure eval sees "".
   fromEnv = name:
@@ -12,7 +37,14 @@ let
 in
 
 {
-  imports = [ ./gnome.nix ];
+  imports =
+    lib.optionals (profile.desktop == "gnome") [ ./gnome.nix ]
+    ++ lib.optionals (profile.desktop == "xfce") [ ./xfce.nix ];
+
+  assertions = [{
+    assertion = builtins.elem profile.desktop [ "none" "gnome" "xfce" ];
+    message = "profile.desktop must be one of: none, gnome, xfce";
+  }];
 
   home.username = fromEnv "USER";
   home.homeDirectory = fromEnv "HOME";
@@ -23,9 +55,18 @@ in
     fd        # fast find
     fzf       # fuzzy finder
     jq        # json on the command line
+    git
+    gh
     lazygit
+    tmux
+    mise
+    uv
+    shellcheck
+    shfmt
+    typescript
     mosh      # ssh that survives roaming/sleep; also provides mosh-server for inbound
     neovim
+    pi-pkg
     # apps that were Homebrew casks/brews on macOS
     wezterm
     claude-code
@@ -34,7 +75,14 @@ in
     nerd-fonts.hack
   ];
   fonts.fontconfig.enable = true;
-  home.sessionVariables.EDITOR = "nvim";
+  home.sessionVariables = privacyVariables // lib.optionalAttrs profile.manageShell { EDITOR = "nvim"; };
+  # Graphical apps inherit privacy controls without requiring ownership of a custom shell.
+  systemd.user.sessionVariables = privacyVariables;
+
+  # Codex analytics defaults to on, so environment-wide OTEL controls are not enough.
+  home.activation.disableCodexTelemetry = config.lib.dag.entryAfter [ "writeBoundary" ] ''
+    run ${codexPrivacy}/bin/ensure-codex-privacy
+  '';
 
   # Put the profiles on PATH ourselves instead of trusting the Nix installer's
   # shell hook. Determinate writes that hook to /etc/zshrc, which Debian's zsh
@@ -49,7 +97,7 @@ in
   programs.home-manager.enable = true;
 
   programs.zsh = {
-    enable = true;
+    enable = profile.manageShell;
     autosuggestion.enable = true;      # ghost text from history
     syntaxHighlighting.enable = true;  # commands turn green when valid
     initContent = ''
@@ -61,13 +109,13 @@ in
       push = "git push";
       pull = "git pull";
       m = "git switch main";
-      cc = "claude --dangerously-skip-permissions";
-      co = "codex --full-auto";
+      cc = "claude";
+      co = "codex";
     };
   };
 
   programs.starship = {
-    enable = true;
+    enable = profile.manageShell;
     settings = {
       add_newline = false;
       format = "$directory$git_branch$git_status$cmd_duration$line_break$character";
@@ -80,21 +128,43 @@ in
   };
 
   # Edit-in-place: the real file stays in my repo, ~/.config just points at it.
-  home.file.".config/wezterm".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/wezterm";
-  home.file.".config/nvim".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/nvim";
-  home.file.".config/herdr".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/herdr";
-  home.file.".claude/settings.json".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/settings.json";
-  home.file.".claude/statusline-command.sh".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/statusline-command.sh";
+  home.file.".config/wezterm" = lib.mkIf profile.manageWezterm {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/wezterm";
+  };
+  home.file.".config/nvim" = lib.mkIf profile.manageNvim {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/nvim";
+  };
+  home.file.".config/herdr" = lib.mkIf profile.manageHerdr {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/herdr";
+  };
+  home.file.".claude/settings.json" = lib.mkIf profile.manageClaudeSettings {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/settings.json";
+  };
+  home.file.".claude/statusline-command.sh" = lib.mkIf profile.manageClaudeSettings {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/statusline-command.sh";
+  };
 
-  home.file.".claude/CLAUDE.md".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
-  home.file.".codex/AGENTS.md".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
-  home.file.".config/opencode/AGENTS.md".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
+  # Pi credentials and runtime state stay local. Only authored resources are linked.
+  home.file.".pi/agent/themes" = lib.mkIf profile.managePiResources {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.pi/agent/themes";
+  };
+  home.file.".pi/agent/extensions" = lib.mkIf profile.managePiResources {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.pi/agent/extensions";
+  };
+  home.file.".pi/agent/models.json" = lib.mkIf profile.managePiResources {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.pi/agent/models.json";
+  };
+  home.file.".pi/agent/settings.json" = lib.mkIf profile.managePiResources {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.pi/agent/settings.json";
+  };
+
+  home.file.".claude/CLAUDE.md" = lib.mkIf profile.manageAgentInstructions {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
+  };
+  home.file.".codex/AGENTS.md" = lib.mkIf profile.manageAgentInstructions {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
+  };
+  home.file.".config/opencode/AGENTS.md" = lib.mkIf profile.manageAgentInstructions {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
+  };
 }
