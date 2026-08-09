@@ -21,6 +21,34 @@ Running the switch builds:
 
 The committed profile is deliberately non-invasive: it installs the packages and privacy controls but adopts no existing app, shell, agent, or desktop configuration. Each config family has a separate opt-in switch in `profile.nix`.
 
+## What Home Manager does here
+
+[Home Manager](https://github.com/nix-community/home-manager) is a reproducible installer and configuration manager for one user account. Nix is the underlying package and build engine; Home Manager adds the user-environment layer that turns this repository into an activatable setup.
+
+```text
+flake.nix + home.nix + profile.nix
+                 |
+                 v
+           Home Manager
+                 |
+                 +-- installs pinned user programs
+                 +-- sets environment variables and PATH
+                 +-- manages explicitly enabled config files
+                 +-- records a reversible generation
+```
+
+In this repository:
+
+- `flake.nix` pins nixpkgs, Home Manager, Pi, and herdr, then exposes the configuration Home Manager can build.
+- `home.nix` declares the programs, font, privacy controls, PATH entries, and optional config-file links that should exist for the current user.
+- `profile.nix` decides which existing shell, editor, terminal, agent, and desktop settings Home Manager is allowed to adopt.
+- `home-manager switch` evaluates those declarations, downloads or builds the required packages in the Nix store, creates a new generation, and activates it for the current user.
+- `./rebuild.sh` repeats that switch after a package or declarative setting changes. Previous Home Manager generations remain available for rollback.
+
+With the checked-in safe profile, Home Manager currently owns the installed toolset, Hack Nerd Font integration, PATH, telemetry opt-outs, explicit Codex privacy settings, and the Home Manager CLI. It does **not** take over the existing zsh, Neovim, WezTerm, herdr, Pi, Claude, agent-instruction, or desktop configuration until the corresponding switch is enabled in `profile.nix`.
+
+This is not a replacement for the Linux distribution. It does not manage the kernel, drivers, display manager, system-wide packages, or root services. Debian, Ubuntu, Fedora, or Arch still own the operating system; Home Manager owns only the selected user environment.
+
 ## Prerequisites
 
 - Linux (x86_64 or ARM; the architecture is detected at switch time).
