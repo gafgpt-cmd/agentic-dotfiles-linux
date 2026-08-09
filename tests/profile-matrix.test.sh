@@ -14,12 +14,14 @@ expected_profiles='["gnome-wayland","gnome-x11","kde-wayland","kde-x11","xfce-wa
 protected=(
   /.zshrc /.zshenv /.profile /.config/starship.toml /.config/nvim /.config/wezterm
   /.config/herdr /.pi/agent /.claude/settings.json /.claude/CLAUDE.md
-  /.codex/AGENTS.md /.config/opencode/AGENTS.md
+  /.codex/AGENTS.md /.config/opencode/AGENTS.md /.config/kdeglobals
 )
 
 for desktop in gnome xfce kde; do
   for session in x11 wayland; do
     profile="$desktop-$session"
+    [ "$(jq -r --arg p "$profile" '.[$p].desktop' <<<"$matrix")" = "$desktop" ] \
+      || fail "$profile exports the wrong desktop"
     [ "$(jq -r --arg p "$profile" '.[$p].displayServer' <<<"$matrix")" = "$session" ] \
       || fail "$profile exports the wrong display server"
     [ "$(jq -r --arg p "$profile" '.[$p].graphicalDisplayServer' <<<"$matrix")" = "$session" ] \
@@ -28,17 +30,16 @@ for desktop in gnome xfce kde; do
     dconf_count=$(jq --arg p "$profile" '.[$p].dconfKeys | length' <<<"$matrix")
     xfconf_count=$(jq --arg p "$profile" '.[$p].xfconfKeys | length' <<<"$matrix")
     gtk_enabled=$(jq -r --arg p "$profile" '.[$p].gtkEnabled' <<<"$matrix")
-    plasma_enabled=$(jq -r --arg p "$profile" '.[$p].plasmaEnabled' <<<"$matrix")
 
     case "$desktop" in
       gnome)
-        if ! { [ "$dconf_count" -gt 0 ] && [ "$xfconf_count" -eq 0 ] && [ "$plasma_enabled" = false ]; }; then
+        if ! { [ "$dconf_count" -gt 0 ] && [ "$xfconf_count" -eq 0 ]; }; then
           fail "$profile does not isolate GNOME settings"
         fi
         ;;
       xfce)
         dconf_keys=$(jq -r --arg p "$profile" '.[$p].dconfKeys[]' <<<"$matrix")
-        if ! { [ "$xfconf_count" -gt 0 ] && [ "$plasma_enabled" = false ] && [ "$gtk_enabled" = true ]; }; then
+        if ! { [ "$xfconf_count" -gt 0 ] && [ "$gtk_enabled" = true ]; }; then
           fail "$profile does not isolate XFCE settings"
         fi
         assert_not_contains "$dconf_keys" /wm/ "XFCE profile configures GNOME window-manager settings"
@@ -50,13 +51,9 @@ for desktop in gnome xfce kde; do
         fi
         ;;
       kde)
-        if ! { [ "$dconf_count" -eq 0 ] && [ "$xfconf_count" -eq 0 ] && [ "$plasma_enabled" = true ]; }; then
-          fail "$profile does not isolate KDE settings"
+        if ! { [ "$dconf_count" -eq 0 ] && [ "$xfconf_count" -eq 0 ] && [ "$gtk_enabled" = false ]; }; then
+          fail "$profile does not preserve existing KDE settings"
         fi
-        [ "$(jq -r --arg p "$profile" '.[$p].plasmaOverrideConfig' <<<"$matrix")" = false ] \
-          || fail "$profile can destructively reset existing KDE configuration"
-        [ "$(jq -r --arg p "$profile" '.[$p].plasmaLookAndFeel' <<<"$matrix")" = \
-          org.kde.breezedark.desktop ] || fail "$profile does not select Breeze Dark"
         ;;
     esac
 
@@ -68,9 +65,12 @@ for desktop in gnome xfce kde; do
 done
 
 wezterm=$(cat "$ROOT/home/.config/wezterm/wezterm.lua")
+kde=$(cat "$ROOT/kde.nix")
+assert_not_contains "$kde" programs.plasma "KDE profile owns Plasma settings"
+assert_not_contains "$kde" kwriteconfig "KDE profile writes KConfig settings"
 assert_contains "$wezterm" 'display_server == "wayland"' "WezTerm has no Wayland selector"
 assert_contains "$wezterm" 'display_server == "x11"' "WezTerm has no X11 selector"
 assert_contains "$wezterm" 'config.enable_wayland = true' "WezTerm does not enable native Wayland"
 assert_contains "$wezterm" 'config.enable_wayland = false' "WezTerm does not force X11 when selected"
 
-pass "GNOME, XFCE, and KDE isolate settings and evaluate for X11 and Wayland"
+pass "GNOME and XFCE isolate settings; KDE preserves them; all evaluate on X11 and Wayland"

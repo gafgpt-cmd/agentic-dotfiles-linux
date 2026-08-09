@@ -73,7 +73,7 @@ managed_files=$(nix --extra-experimental-features 'nix-command flakes' eval --js
   "path:$ROOT#homeConfigurations.default.config.home.file" --apply builtins.attrNames | jq -r '.[]')
 for target in .zshrc .zshenv .profile .config/starship.toml .config/nvim .config/wezterm \
   .config/herdr .pi/agent .claude/settings.json .claude/CLAUDE.md .codex/AGENTS.md \
-  .config/opencode/AGENTS.md; do
+  .config/opencode/AGENTS.md .config/kdeglobals; do
   assert_not_contains "$managed_files" "/$target" "safe profile unexpectedly owns ~/$target"
 done
 [ "$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
@@ -82,8 +82,4 @@ done
 [ "$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
   "path:$ROOT#homeConfigurations.default.config.dconf.settings")" = '{}' ] \
   || fail "safe profile changes GNOME settings"
-[ "$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
-  "path:$ROOT#homeConfigurations.default.config.programs.plasma.enable")" = false ] \
-  || fail "safe profile changes KDE settings"
-
 pass "Linux wiring, safety defaults, telemetry policy, shell, and JSON are valid"

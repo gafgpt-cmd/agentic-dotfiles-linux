@@ -12,7 +12,7 @@ Nothing machine-specific is committed: username, home directory, and CPU archite
 Running the switch builds:
 
 - Nix user packages (Git, GitHub CLI, ripgrep, fd, fzf, jq, lazygit, tmux, mise, uv, TypeScript, shellcheck, shfmt, Mosh, Neovim, WezTerm, Claude Code, Pi, herdr, Hack Nerd Font)
-- Selectable XFCE, GNOME, KDE Plasma, or no desktop settings
+- Selectable GNOME/XFCE settings, a KDE compatibility profile, or no desktop settings
 - Shell (zsh, aliases, starship prompt)
 - Editor (Neovim config with the rose-pine moon theme)
 - Terminal (WezTerm with rose-pine moon and clear inactive-window dimming)
@@ -132,7 +132,7 @@ The `cc` and `co` aliases launch Claude and Codex with their normal configured p
   Wires up nixpkgs, home-manager, and the herdr flake, and declares the `homeConfigurations` output.
 - `profile.nix` - desktop choice and adoption switches for existing agent configuration.
 - `home.nix` - user-level config: shell, packages, prompt, and the symlinks described below.
-- `gnome.nix` / `xfce.nix` / `kde.nix` - optional Linux desktop mappings for macOS defaults.
+- `gnome.nix` / `xfce.nix` / `kde.nix` - optional Linux desktop compatibility modules.
 - `rebuild.sh` - re-applies the config after the first switch.
 - `home/` - edit-in-place app and agent resources.
 - `tests/` - Linux wiring, full desktop/session matrix, and Pi Calm behavior tests.
@@ -156,9 +156,9 @@ The flake exposes and builds six profiles: GNOME, XFCE, and KDE Plasma on both X
 | --- | --- | --- | --- |
 | GNOME | Home Manager dconf | Build-tested | Build-tested |
 | XFCE | Home Manager GTK/xfconf | Build-tested | Build-tested portable subset; [XFCE's Wayland session remains preliminary](https://wiki.xfce.org/releng/wayland_roadmap) |
-| KDE Plasma | Plasma Manager, non-destructive mode | Build-tested | Build-tested |
+| KDE Plasma | No KConfig ownership; existing settings preserved | Build-tested | Build-tested |
 
-`displayServer = "x11"` makes an adopted WezTerm config use X11. `displayServer = "wayland"` enables its [native Wayland backend](https://wezterm.org/config/lua/config/enable_wayland.html). `auto` keeps WezTerm's own detection. GNOME dconf and KDE Plasma preferences are shared by both session types. XFCE's Wayland profile omits X11-only XSettings and xfwm4 keys while retaining GTK, Thunar, and xfdesktop preferences.
+`displayServer = "x11"` makes an adopted WezTerm config use X11. `displayServer = "wayland"` enables its [native Wayland backend](https://wezterm.org/config/lua/config/enable_wayland.html). `auto` keeps WezTerm's own detection. GNOME preferences are shared by both session types. KDE compatibility leaves every KConfig preference untouched. XFCE's Wayland profile omits X11-only XSettings and xfwm4 keys while retaining GTK, Thunar, and xfdesktop preferences.
 
 ## Telemetry policy
 
