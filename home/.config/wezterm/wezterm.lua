@@ -11,6 +11,13 @@ config.window_background_opacity = 0.8
 config.hide_tab_bar_if_only_one_tab = true
 config.window_decorations = "RESIZE"
 
+local display_server = os.getenv("AGENTIC_DISPLAY_SERVER")
+if display_server == "wayland" then
+	config.enable_wayland = true
+elseif display_server == "x11" then
+	config.enable_wayland = false
+end
+
 local UNFOCUSED_FOREGROUND_TEXT_HSB = { hue = 1.0, saturation = 0.25, brightness = 0.45 }
 local UNFOCUSED_WINDOW_BACKGROUND_OPACITY = 0.62
 

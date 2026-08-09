@@ -12,7 +12,7 @@ Nothing machine-specific is committed: username, home directory, and CPU archite
 Running the switch builds:
 
 - Nix user packages (Git, GitHub CLI, ripgrep, fd, fzf, jq, lazygit, tmux, mise, uv, TypeScript, shellcheck, shfmt, Mosh, Neovim, WezTerm, Claude Code, Pi, herdr, Hack Nerd Font)
-- Selectable XFCE, GNOME, or no desktop settings
+- Selectable XFCE, GNOME, KDE Plasma, or no desktop settings
 - Shell (zsh, aliases, starship prompt)
 - Editor (Neovim config with the rose-pine moon theme)
 - Terminal (WezTerm with rose-pine moon and clear inactive-window dimming)
@@ -66,7 +66,9 @@ After that, `home-manager` exists and you're on the normal workflow below.
 nix --extra-experimental-features 'nix-command flakes' flake check --no-build --impure
 nix --extra-experimental-features 'nix-command flakes' build .#homeConfigurations.default.activationPackage --dry-run --impure
 ./tests/linux-config.test.sh
+./tests/profile-matrix.test.sh
 ./tests/pi-calm.test.sh
+./tests/build-matrix.sh
 ```
 
 `--impure` is required: the flake reads `$USER`, `$HOME`, and the CPU architecture from the environment.
@@ -100,7 +102,8 @@ Username, home directory, and CPU architecture need no editing: they come from t
 
 The checked-in `profile.nix` is safe for an established machine: `desktop = "none"` and every adoption switch is false. Enable only the parts you want Home Manager to own:
 
-- `desktop`: `xfce`, `gnome`, or `none`.
+- `desktop`: `xfce`, `gnome`, `kde`, or `none`.
+- `displayServer`: `x11`, `wayland`, or `auto`. Explicit values select WezTerm's native backend; `auto` leaves toolkit detection alone.
 - `manageShell`: zsh files, aliases, editor variable, starship config, and login-shell setup.
 - `manageNvim`, `manageWezterm`, `manageHerdr`: the matching config directory.
 - `managePiResources`: Pi settings, model overrides, themes, and extensions; never credentials, sessions, caches, or runtime state.
@@ -129,10 +132,10 @@ The `cc` and `co` aliases launch Claude and Codex with their normal configured p
   Wires up nixpkgs, home-manager, and the herdr flake, and declares the `homeConfigurations` output.
 - `profile.nix` - desktop choice and adoption switches for existing agent configuration.
 - `home.nix` - user-level config: shell, packages, prompt, and the symlinks described below.
-- `gnome.nix` / `xfce.nix` - optional Linux desktop mappings for macOS defaults.
+- `gnome.nix` / `xfce.nix` / `kde.nix` - optional Linux desktop mappings for macOS defaults.
 - `rebuild.sh` - re-applies the config after the first switch.
 - `home/` - edit-in-place app and agent resources.
-- `tests/` - Linux wiring and Pi Calm behavior tests.
+- `tests/` - Linux wiring, full desktop/session matrix, and Pi Calm behavior tests.
 
 ## How the symlinks work
 
@@ -144,6 +147,18 @@ Pi is handled more narrowly: Home Manager links authored themes, extensions, `mo
 
 The Pi settings pin `pi-web-access`, Codex fast mode, and OpenAI server-side compaction. These packages execute with your user permissions; review their immutable versions in `home/.pi/agent/settings.json` before switching. The compaction package sends relevant conversation state to OpenAI.
 Pi itself is pinned through a separate nixpkgs snapshot because the 26.05 stable snapshot still carries Pi 0.75; the Calm extension's real terminal test targets the pinned Pi 0.84.
+
+## Desktop and display-server support
+
+The flake exposes and builds six profiles: GNOME, XFCE, and KDE Plasma on both X11 and Wayland. Desktop modules only configure user preferences; the distro remains responsible for installing the desktop, display manager, GPU stack, and session itself.
+
+| Profile | Settings backend | X11 | Wayland |
+| --- | --- | --- | --- |
+| GNOME | Home Manager dconf | Build-tested | Build-tested |
+| XFCE | Home Manager GTK/xfconf | Build-tested | Build-tested portable subset; [XFCE's Wayland session remains preliminary](https://wiki.xfce.org/releng/wayland_roadmap) |
+| KDE Plasma | Plasma Manager, non-destructive mode | Build-tested | Build-tested |
+
+`displayServer = "x11"` makes an adopted WezTerm config use X11. `displayServer = "wayland"` enables its [native Wayland backend](https://wezterm.org/config/lua/config/enable_wayland.html). `auto` keeps WezTerm's own detection. GNOME dconf and KDE Plasma preferences are shared by both session types. XFCE's Wayland profile omits X11-only XSettings and xfwm4 keys while retaining GTK, Thunar, and xfdesktop preferences.
 
 ## Telemetry policy
 
@@ -169,7 +184,7 @@ The bundled local extensions and pinned Pi packages were checked for additional 
 | macOS | Linux |
 | --- | --- |
 | nix-darwin `darwinConfigurations` | standalone home-manager `homeConfigurations` |
-| `configuration.nix` system defaults | selected `gnome.nix`, `xfce.nix`, or none |
+| `configuration.nix` system defaults | selected `gnome.nix`, `xfce.nix`, `kde.nix`, or none |
 | Homebrew casks (`wezterm`, `claude-code`) | nixpkgs packages in `home.nix` |
 | `herdr` Homebrew formula | the upstream herdr flake, pinned in `flake.nix` |
 | `darwin-rebuild switch` (sudo) | `home-manager switch` (no sudo) |

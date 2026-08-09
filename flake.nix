@@ -7,6 +7,10 @@
     home-manager.url = "github:nix-community/home-manager/release-26.05";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
 
+    plasma-manager.url = "github:nix-community/plasma-manager";
+    plasma-manager.inputs.nixpkgs.follows = "nixpkgs";
+    plasma-manager.inputs.home-manager.follows = "home-manager";
+
     # The stable 26.05 snapshot still has Pi 0.75. Calm is proved against 0.84.
     nixpkgs-pi.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -14,7 +18,7 @@
     herdr.url = "github:ogulcancelik/herdr/v0.7.4";
   };
 
-  outputs = inputs@{ self, nixpkgs, nixpkgs-pi, home-manager, herdr }:
+  outputs = inputs@{ self, nixpkgs, nixpkgs-pi, home-manager, plasma-manager, herdr }:
     let
       # Impure on purpose: the same clone must work on any machine, any user,
       # any CPU arch, with nothing machine-specific committed here. The scripts
@@ -27,6 +31,14 @@
       };
       pi-pkg = nixpkgs-pi.legacyPackages.${system}.pi-coding-agent;
       profile = import ./profile.nix;
+      profileMatrix = {
+        gnome-x11 = profile // { desktop = "gnome"; displayServer = "x11"; };
+        gnome-wayland = profile // { desktop = "gnome"; displayServer = "wayland"; };
+        xfce-x11 = profile // { desktop = "xfce"; displayServer = "x11"; };
+        xfce-wayland = profile // { desktop = "xfce"; displayServer = "wayland"; };
+        kde-x11 = profile // { desktop = "kde"; displayServer = "x11"; };
+        kde-wayland = profile // { desktop = "kde"; displayServer = "wayland"; };
+      };
       codexPrivacy = pkgs.writeShellApplication {
         name = "ensure-codex-privacy";
         runtimeInputs = [ (pkgs.python3.withPackages (ps: [ ps.tomlkit ])) ];
@@ -34,16 +46,39 @@
           exec python ${./scripts/ensure-codex-privacy.py} "$@"
         '';
       };
-    in
-    {
-      homeConfigurations.default = home-manager.lib.homeManagerConfiguration {
+      mkHome = selectedProfile: home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         extraSpecialArgs = {
           herdr-pkg = herdr.packages.${system}.default;
-          inherit codexPrivacy pi-pkg profile;
+          profile = selectedProfile;
+          inherit codexPrivacy pi-pkg;
         };
-        modules = [ ./home.nix ];
+        modules = [
+          plasma-manager.homeModules.plasma-manager
+          ./home.nix
+        ];
       };
+      matrixConfigurations = builtins.mapAttrs (_: mkHome) profileMatrix;
+      homeConfigurations = { default = mkHome profile; } // matrixConfigurations;
+    in
+    {
+      inherit homeConfigurations;
+
+      lib.profileMatrix = builtins.mapAttrs (_: configuration:
+        let cfg = configuration.config; in {
+          displayServer = cfg.home.sessionVariables.AGENTIC_DISPLAY_SERVER;
+          graphicalDisplayServer = cfg.systemd.user.sessionVariables.AGENTIC_DISPLAY_SERVER;
+          dconfKeys = builtins.attrNames cfg.dconf.settings;
+          xfconfKeys = builtins.attrNames cfg.xfconf.settings;
+          gtkEnabled = cfg.gtk.enable;
+          plasmaEnabled = cfg.programs.plasma.enable;
+          plasmaOverrideConfig = cfg.programs.plasma.overrideConfig;
+          plasmaLookAndFeel = cfg.programs.plasma.workspace.lookAndFeel;
+          managedFiles = builtins.attrNames cfg.home.file;
+        }
+      ) matrixConfigurations;
+
+      checks.${system} = builtins.mapAttrs (_: configuration: configuration.activationPackage) homeConfigurations;
 
       packages.${system} = {
         ensure-codex-privacy = codexPrivacy;

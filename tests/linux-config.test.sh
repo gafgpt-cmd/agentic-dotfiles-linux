@@ -17,7 +17,9 @@ bootstrap=$(cat "$ROOT/bootstrap.sh")
 
 assert_contains "$home_nix" 'profile.desktop == "xfce"' "XFCE profile is not wired"
 assert_contains "$home_nix" 'profile.desktop == "gnome"' "GNOME profile is not wired"
+assert_contains "$home_nix" 'profile.desktop == "kde"' "KDE profile is not wired"
 assert_contains "$profile_nix" 'desktop = "none";' "safe profile changes desktop settings"
+assert_contains "$profile_nix" 'displayServer = "auto";' "safe profile forces a display server"
 for switch in manageShell manageNvim manageWezterm manageHerdr managePiResources \
   manageClaudeSettings manageAgentInstructions; do
   assert_contains "$profile_nix" "$switch = false;" "$switch is not safe by default"
@@ -46,7 +48,7 @@ assert_contains "$(cat "$ROOT/home/.pi/agent/settings.json")" '"enableInstallTel
 assert_contains "$(cat "$ROOT/home/.pi/agent/settings.json")" '"enableAnalytics": false' \
   "Pi analytics is not disabled in settings"
 assert_contains "$home_nix" 'disableCodexTelemetry' "Codex config telemetry gate is not activated"
-assert_contains "$home_nix" 'systemd.user.sessionVariables = privacyVariables;' \
+assert_contains "$home_nix" 'systemd.user.sessionVariables = privacyVariables // displayVariables;' \
   "graphical apps do not inherit privacy controls"
 assert_contains "$(cat "$ROOT/scripts/ensure-codex-privacy.py")" 'analytics["enabled"] = False' \
   "Codex analytics is not explicitly disabled"
@@ -80,5 +82,8 @@ done
 [ "$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
   "path:$ROOT#homeConfigurations.default.config.dconf.settings")" = '{}' ] \
   || fail "safe profile changes GNOME settings"
+[ "$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
+  "path:$ROOT#homeConfigurations.default.config.programs.plasma.enable")" = false ] \
+  || fail "safe profile changes KDE settings"
 
 pass "Linux wiring, safety defaults, telemetry policy, shell, and JSON are valid"
