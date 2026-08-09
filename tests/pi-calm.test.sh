@@ -94,18 +94,15 @@ have_pi_package() {
 
 # The committed profile adopts no Pi resources, so ask the configuration what it
 # manages once managePiResources is on.
-ADOPTED_PI_PROFILE="(builtins.getFlake \"path:$ROOT\").homeConfigurations.default.extendModules {
-  specialArgs.profile = (import $ROOT/profile.nix) // { managePiResources = true; };
-}"
+ADOPTED_PI_PROFILE=$(dotfiles_hm_profile 'managePiResources = true;')
 
 pi_adopted_files() {
-  nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
-    --expr "builtins.attrNames ($ADOPTED_PI_PROFILE).config.home.file" \
+  dotfiles_hm_targets "$ADOPTED_PI_PROFILE" \
     || fail "could not evaluate a Pi-managed Home Manager profile"
 }
 
 pi_extensions_link() {
-  nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths --impure \
+  dotfiles_nix build --no-link --print-out-paths --impure \
     --expr "($ADOPTED_PI_PROFILE).config.home.file.\".pi/agent/extensions\".source" \
     || fail "could not build the Pi extensions link"
 }

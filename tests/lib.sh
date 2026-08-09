@@ -69,6 +69,56 @@ assert_not_contains() {
   esac
 }
 
+# --- Home Manager ownership ----------------------------------------------------
+
+# Paths the user keeps unless a profile switch explicitly adopts them.
+# shellcheck disable=SC2034
+DOTFILES_PROTECTED_PATHS=(
+  .zshrc .zshenv .profile .config/starship.toml .config/nvim .config/wezterm
+  .config/herdr .pi/agent .claude/settings.json .claude/CLAUDE.md
+  .codex/AGENTS.md .config/opencode/AGENTS.md .config/kdeglobals
+)
+
+# The subset this repo can adopt, used as a positive control so the guard over
+# DOTFILES_PROTECTED_PATHS is proven able to fail.
+# shellcheck disable=SC2034
+DOTFILES_ADOPTABLE_PATHS=(
+  .zshrc .zshenv .config/starship.toml .config/nvim .config/wezterm
+  .config/herdr .pi/agent .claude/settings.json .claude/CLAUDE.md
+  .codex/AGENTS.md .config/opencode/AGENTS.md
+)
+
+dotfiles_nix() {
+  nix --extra-experimental-features 'nix-command flakes' "$@"
+}
+
+# Echoes a Nix expression for this repo's configuration with profile overrides,
+# e.g. dotfiles_hm_profile 'managePiResources = true;'
+dotfiles_hm_profile() {
+  printf '(builtins.getFlake "path:%s").homeConfigurations.default.extendModules { specialArgs.profile = (import %s/profile.nix) // { %s }; }' \
+    "$ROOT" "$ROOT" "${1:-}"
+}
+
+# Home Manager keeps declared keys as written (".config/nvim", "./.zshrc", or an
+# absolute path) but normalizes every entry's target to a home-relative path.
+# Reads a JSON array of targets on stdin, echoes the comparable form.
+dotfiles_normalize_targets() {
+  jq -c 'map(sub("^\\./"; "")) | sort'
+}
+
+dotfiles_hm_targets() {
+  dotfiles_nix eval --json --impure \
+    --expr "map (f: f.target) (builtins.attrValues ($1).config.home.file)" \
+    | dotfiles_normalize_targets
+}
+
+# Home Manager owns a path when it manages that exact target or anything below it.
+dotfiles_owns() {
+  local targets=$1 path=$2
+  jq -e --arg p "$path" \
+    'map(select(. == $p or startswith($p + "/"))) | length > 0' >/dev/null <<<"$targets"
+}
+
 # --- deterministic git fixtures ------------------------------------------------
 
 dotfiles_git_init_commit() {

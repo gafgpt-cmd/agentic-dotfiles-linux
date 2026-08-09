@@ -13,24 +13,29 @@ nix_run() { nix --extra-experimental-features 'nix-command flakes' "$@"; }
 matrix=$(nix_run eval --json --impure "path:$ROOT#lib.profileMatrix")
 
 # The desktop-less profile is the yardstick for "owns nothing of this desktop".
-neutral_files=$(nix_run eval --json --impure \
-  "path:$ROOT#homeConfigurations.default.config.home.file" --apply builtins.attrNames | jq -S .)
+neutral_files=$(dotfiles_hm_targets "$(dotfiles_hm_profile)")
 neutral_activation=$(nix_run eval --json --impure \
   "path:$ROOT#homeConfigurations.default.config.home.activation" --apply builtins.attrNames | jq -S .)
+
+# Positive control: the same needles do trip once a profile adopts those paths.
+adopted_files=$(dotfiles_hm_targets "$(dotfiles_hm_profile '
+  desktop = "gnome"; manageShell = true; manageNvim = true; manageWezterm = true;
+  manageHerdr = true; managePiResources = true; manageClaudeSettings = true;
+  manageAgentInstructions = true;
+')")
+for target in "${DOTFILES_ADOPTABLE_PATHS[@]}"; do
+  dotfiles_owns "$adopted_files" "$target" \
+    || fail "adopting everything no longer owns ~/$target, so the per-profile guard cannot fail"
+done
 
 expected_profiles='["gnome-wayland","gnome-x11","kde-wayland","kde-x11","xfce-wayland","xfce-x11"]'
 [ "$(jq -c 'keys' <<<"$matrix")" = "$expected_profiles" ] \
   || fail "flake does not expose the complete desktop/session matrix"
 
-protected=(
-  /.zshrc /.zshenv /.profile /.config/starship.toml /.config/nvim /.config/wezterm
-  /.config/herdr /.pi/agent /.claude/settings.json /.claude/CLAUDE.md
-  /.codex/AGENTS.md /.config/opencode/AGENTS.md /.config/kdeglobals
-)
-
 for desktop in gnome xfce kde; do
   for session in x11 wayland; do
     profile="$desktop-$session"
+    managed=$(jq -c --arg p "$profile" '.[$p].managedFiles' <<<"$matrix" | dotfiles_normalize_targets)
     [ "$(jq -r --arg p "$profile" '.[$p].desktop' <<<"$matrix")" = "$desktop" ] \
       || fail "$profile exports the wrong desktop"
     [ "$(jq -r --arg p "$profile" '.[$p].displayServer' <<<"$matrix")" = "$session" ] \
@@ -69,16 +74,17 @@ for desktop in gnome xfce kde; do
         # is byte-for-byte the desktop-less one, so nothing new writes ~/.config.
         [ "$(jq -r --arg p "$profile" '.[$p].plasmaManaged' <<<"$matrix")" = false ] \
           || fail "$profile hands KDE settings to plasma-manager"
-        [ "$(jq -S --arg p "$profile" '.[$p].managedFiles' <<<"$matrix")" = "$neutral_files" ] \
+        [ "$managed" = "$neutral_files" ] \
           || fail "$profile manages files the desktop-less profile does not"
         [ "$(jq -S --arg p "$profile" '.[$p].activationEntries' <<<"$matrix")" = "$neutral_activation" ] \
           || fail "$profile adds an activation step that could write KConfig"
         ;;
     esac
 
-    managed=$(jq -r --arg p "$profile" '.[$p].managedFiles[]' <<<"$matrix")
-    for target in "${protected[@]}"; do
-      assert_not_contains "$managed" "$target" "$profile unexpectedly adopts *$target"
+    for target in "${DOTFILES_PROTECTED_PATHS[@]}"; do
+      if dotfiles_owns "$managed" "$target"; then
+        fail "$profile unexpectedly adopts ~/$target"
+      fi
     done
   done
 done
