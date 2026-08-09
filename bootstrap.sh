@@ -71,7 +71,7 @@ REAL_USER="$(whoami)"
 # --impure: the flake reads $USER, $HOME, and the CPU arch from the environment
 # so nothing machine-specific is ever committed to this repo.
 nix run github:nix-community/home-manager/release-26.05 -- \
-  switch -b backup --impure --flake ~/.dotfiles#default
+  switch -b backup --impure --flake "$DIR#default"
 # If this fails with "nix: command not found", open a new terminal
 # (Determinate adds nix to new shells' PATH) and re-run ./bootstrap.sh.
 
