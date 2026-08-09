@@ -25,27 +25,31 @@ The committed profile is deliberately non-invasive: it installs the packages and
 
 [Home Manager](https://github.com/nix-community/home-manager) is a reproducible installer and configuration manager for one user account. Nix is the underlying package and build engine; Home Manager adds the user-environment layer that turns this repository into an activatable setup.
 
+A Nix flake is the project interface that Nix reads. It consists of `flake.nix`, which declares the external inputs and the configurations or other outputs the project provides, and `flake.lock`, which records the exact revision of every input. The part after `#` in a flake reference selects an output; here, `#default` selects this repository's default Home Manager configuration. `--impure` only allows this flake to read `USER`, `HOME`, and `builtins.currentSystem` for the current machine. External inputs remain locked by `flake.lock`.
+
 ```text
-flake.nix + home.nix + profile.nix
-                 |
-                 v
-           Home Manager
-                 |
-                 +-- installs pinned user programs
-                 +-- sets environment variables and PATH
-                 +-- manages explicitly enabled config files
-                 +-- records a reversible generation
+flake.nix + flake.lock + home.nix + profile.nix
+                       |
+                       v
+                 Home Manager
+                       |
+                       +-- installs locked user programs
+                       +-- sets environment variables and PATH
+                       +-- manages explicitly enabled config files
+                       +-- creates and activates a generation
 ```
 
 In this repository:
 
-- `flake.nix` pins nixpkgs, Home Manager, Pi, and herdr, then exposes the configuration Home Manager can build.
+- `flake.nix` declares the nixpkgs, Home Manager, Pi-package, and herdr inputs and exposes the configurations Home Manager can build; `flake.lock` locks those inputs to exact revisions.
 - `home.nix` declares the programs, font, privacy controls, PATH entries, and optional config-file links that should exist for the current user.
 - `profile.nix` decides which existing shell, editor, terminal, agent, and desktop settings Home Manager is allowed to adopt.
 - `home-manager switch` evaluates those declarations, downloads or builds the required packages in the Nix store, creates a new generation, and activates it for the current user.
-- `./rebuild.sh` repeats that switch after a package or declarative setting changes. Previous Home Manager generations remain available for rollback.
+- `./rebuild.sh` repeats that switch after a package or declarative setting changes.
 
-With the checked-in safe profile, Home Manager currently owns the installed toolset, Hack Nerd Font integration, PATH, telemetry opt-outs, explicit Codex privacy settings, and the Home Manager CLI. It does **not** take over the existing zsh, Neovim, WezTerm, herdr, Pi, Claude, agent-instruction, or desktop configuration until the corresponding switch is enabled in `profile.nix`.
+Each switch creates a generation: a versioned snapshot of the store-managed packages and links that Home Manager activated. Older generations can restore that managed state. Adopted configurations use links to the live files in this repository, however, so a Home Manager rollback does not restore earlier contents of those files; use Git to roll their contents back.
+
+With the checked-in safe profile, Home Manager currently owns the installed toolset and Home Manager CLI, Hack Nerd Font integration, the Nix profile entries added to PATH, telemetry opt-outs in shell and graphical sessions, `AGENTIC_DISPLAY_SERVER=auto` in those sessions, and the Codex analytics and OpenTelemetry privacy keys. It does **not** take over the existing zsh, Neovim, WezTerm, herdr, Pi, Claude, agent-instruction, or desktop configuration until the corresponding switch is enabled in `profile.nix`.
 
 This is not a replacement for the Linux distribution. It does not manage the kernel, drivers, display manager, system-wide packages, or root services. Debian, Ubuntu, Fedora, or Arch still own the operating system; Home Manager owns only the selected user environment.
 
