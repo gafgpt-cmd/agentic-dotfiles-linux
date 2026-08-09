@@ -7,10 +7,6 @@
     home-manager.url = "github:nix-community/home-manager/release-26.05";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
 
-    plasma-manager.url = "github:nix-community/plasma-manager";
-    plasma-manager.inputs.nixpkgs.follows = "nixpkgs";
-    plasma-manager.inputs.home-manager.follows = "home-manager";
-
     # The stable 26.05 snapshot still has Pi 0.75. Calm is proved against 0.84.
     nixpkgs-pi.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -18,7 +14,7 @@
     herdr.url = "github:ogulcancelik/herdr/v0.7.4";
   };
 
-  outputs = inputs@{ self, nixpkgs, nixpkgs-pi, home-manager, plasma-manager, herdr }:
+  outputs = inputs@{ self, nixpkgs, nixpkgs-pi, home-manager, herdr }:
     let
       # Impure on purpose: the same clone must work on any machine, any user,
       # any CPU arch, with nothing machine-specific committed here. The scripts
@@ -53,10 +49,7 @@
           profile = selectedProfile;
           inherit codexPrivacy pi-pkg;
         };
-        modules = [
-          plasma-manager.homeModules.plasma-manager
-          ./home.nix
-        ];
+        modules = [ ./home.nix ];
       };
       matrixConfigurations = builtins.mapAttrs (_: mkHome) profileMatrix;
       homeConfigurations = { default = mkHome profile; } // matrixConfigurations;
@@ -64,16 +57,14 @@
     {
       inherit homeConfigurations;
 
-      lib.profileMatrix = builtins.mapAttrs (_: configuration:
+      lib.profileMatrix = builtins.mapAttrs (name: configuration:
         let cfg = configuration.config; in {
+          desktop = profileMatrix.${name}.desktop;
           displayServer = cfg.home.sessionVariables.AGENTIC_DISPLAY_SERVER;
           graphicalDisplayServer = cfg.systemd.user.sessionVariables.AGENTIC_DISPLAY_SERVER;
           dconfKeys = builtins.attrNames cfg.dconf.settings;
           xfconfKeys = builtins.attrNames cfg.xfconf.settings;
           gtkEnabled = cfg.gtk.enable;
-          plasmaEnabled = cfg.programs.plasma.enable;
-          plasmaOverrideConfig = cfg.programs.plasma.overrideConfig;
-          plasmaLookAndFeel = cfg.programs.plasma.workspace.lookAndFeel;
           managedFiles = builtins.attrNames cfg.home.file;
         }
       ) matrixConfigurations;

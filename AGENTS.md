@@ -3,7 +3,7 @@
 Deliberate decisions in this repo - do NOT silently revert them:
 
 - This is a Linux-only port of a macOS nix-darwin repo. Do not reintroduce nix-darwin, nix-homebrew, or `configuration.nix`. Desktop and display-server selection live in `profile.nix`; supported desktop modules are GNOME, XFCE, KDE, and none. Every desktop builds for X11 and Wayland.
-- KDE uses Plasma Manager with `overrideConfig = false`. Never enable destructive replacement of unspecified Plasma settings.
+- KDE compatibility owns no KConfig files or keys. Never add broad global-theme application or a non-atomic KDE config writer.
 - Standalone home-manager is a deliberate choice over NixOS: the target machines run their own distro (Debian 13/GNOME today) and only the user environment is managed here. Anything needing root or a system service is out of scope.
 - `herdr` is not in nixpkgs. It comes from its own upstream flake, pinned by tag in `flake.nix`. Bump the tag, do not vendor it.
 - `bootstrap.sh` step 4 uses the distro's zsh, not the Nix one, on purpose: a broken home-manager generation must never remove the login shell of a remote machine. Do not "simplify" it to `~/.nix-profile/bin/zsh`.

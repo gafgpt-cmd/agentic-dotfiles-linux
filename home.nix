@@ -35,7 +35,7 @@ let
   fromEnv = name:
     let v = builtins.getEnv name; in
     if v == "" then
-      throw "$${name} is empty. Run ./rebuild.sh, or pass --impure to home-manager/nix."
+      throw "Environment variable ${name} is empty. Run ./rebuild.sh, or pass --impure to home-manager/nix."
     else v;
 in
 
