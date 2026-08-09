@@ -42,8 +42,10 @@ else
   . "$NIX_PROFILE_SCRIPT"
 fi
 
+# --impure: pure evaluation forbids reading a path outside the store, so a plain
+# `nix eval` on ./profile.nix aborts the whole bootstrap before step 2.
 profile_enabled() {
-  (cd "$DIR" && nix eval --raw --expr "if (import ./profile.nix).$1 then \"1\" else \"0\"")
+  (cd "$DIR" && nix eval --impure --raw --expr "if (import ./profile.nix).$1 then \"1\" else \"0\"")
 }
 MANAGE_SHELL="$(profile_enabled manageShell)"
 MANAGE_NVIM="$(profile_enabled manageNvim)"

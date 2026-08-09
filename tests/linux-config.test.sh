@@ -4,6 +4,15 @@ set -euo pipefail
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+TMP_ROOT=$(dotfiles_test_tmproot linux-config)
+cleanup() { dotfiles_test_cleanup "$TMP_ROOT"; }
+trap cleanup EXIT
+
+command -v nix >/dev/null 2>&1 || fail "these tests need nix on PATH"
+
+nix_run() { nix --extra-experimental-features 'nix-command flakes' "$@"; }
+hm_eval() { nix_run eval --json --impure "path:$ROOT#homeConfigurations.default.config.$1" "${@:2}"; }
+
 for script in "$ROOT/bootstrap.sh" "$ROOT/rebuild.sh" "$ROOT/home/.claude/statusline-command.sh"; do
   bash -n "$script" || fail "$(basename "$script") has invalid shell syntax"
 done
@@ -11,75 +20,197 @@ done
 shellcheck "$ROOT/bootstrap.sh" "$ROOT/rebuild.sh" "$ROOT/home/.claude/statusline-command.sh" \
   || fail "shellcheck failed"
 
-home_nix=$(cat "$ROOT/home.nix")
-profile_nix=$(cat "$ROOT/profile.nix")
-bootstrap=$(cat "$ROOT/bootstrap.sh")
+# --- entry points: run them and assert what they actually do ------------------
+# Every case below stops the script before it can switch a generation, so no
+# live Home Manager configuration is ever activated by this suite.
 
-assert_contains "$home_nix" 'profile.desktop == "xfce"' "XFCE profile is not wired"
-assert_contains "$home_nix" 'profile.desktop == "gnome"' "GNOME profile is not wired"
-assert_contains "$home_nix" 'profile.desktop == "kde"' "KDE profile is not wired"
-assert_contains "$profile_nix" 'desktop = "none";' "safe profile changes desktop settings"
-assert_contains "$profile_nix" 'displayServer = "auto";' "safe profile forces a display server"
-for switch in manageShell manageNvim manageWezterm manageHerdr managePiResources \
-  manageClaudeSettings manageAgentInstructions; do
-  assert_contains "$profile_nix" "$switch = false;" "$switch is not safe by default"
-  assert_contains "$home_nix" "profile.$switch" "$switch is not wired"
+fake_bin="$TMP_ROOT/bin"
+mkdir -p "$fake_bin"
+printf '#!/bin/sh\necho Darwin\n' >"$fake_bin/uname"
+chmod +x "$fake_bin/uname"
+
+for entry in bootstrap.sh rebuild.sh; do
+  darwin_home="$TMP_ROOT/darwin-$entry"
+  mkdir -p "$darwin_home"
+  out=$(PATH="$fake_bin:$PATH" HOME="$darwin_home" bash "$ROOT/$entry" 2>&1) && status=0 || status=$?
+  [ "$status" = 1 ] || fail "$entry does not refuse to run on a non-Linux host"
+  assert_contains "$out" 'Linux-only' "$entry does not say why it refused on a non-Linux host"
+  assert_contains "$out" 'github.com/kunchenguid/dotfiles' "$entry does not point macOS users at the nix-darwin repo"
+  if [ -e "$darwin_home/.dotfiles" ] || [ -L "$darwin_home/.dotfiles" ]; then
+    fail "$entry claimed ~/.dotfiles on a non-Linux host"
+  fi
+
+  # An existing ~/.dotfiles is somebody else's clone: never repoint it.
+  claimed_home="$TMP_ROOT/claimed-$entry"
+  mkdir -p "$claimed_home"
+  printf 'someone elses clone\n' >"$claimed_home/.dotfiles"
+  out=$(HOME="$claimed_home" bash "$ROOT/$entry" 2>&1) && status=0 || status=$?
+  [ "$status" = 1 ] || fail "$entry does not refuse to replace an existing ~/.dotfiles"
+  assert_contains "$out" 'Refusing to replace existing' "$entry does not explain the refusal"
+  assert_not_contains "$out" 'BOOTSTRAP FAILED' "$entry aborted before it could reach the ~/.dotfiles guard"
+  [ "$(cat "$claimed_home/.dotfiles")" = 'someone elses clone' ] \
+    || fail "$entry overwrote an existing ~/.dotfiles"
 done
-assert_contains "$home_nix" 'pi-pkg' "the tested Pi package is not installed by Home Manager"
-assert_contains "$home_nix" 'GNHF_TELEMETRY = "0";' "GNHF telemetry is not disabled"
-assert_contains "$home_nix" 'NO_MISTAKES_TELEMETRY = "0";' "no-mistakes telemetry is not disabled"
-assert_contains "$home_nix" 'LAVISH_AXI_TELEMETRY = "0";' "Lavish telemetry is not disabled"
-assert_contains "$home_nix" 'PI_TELEMETRY = "0";' "Pi telemetry is not disabled"
-assert_contains "$home_nix" 'PI_SKIP_VERSION_CHECK = "1";' "Pi version check is not disabled"
-assert_contains "$home_nix" 'DISABLE_TELEMETRY = "1";' "Claude telemetry is not disabled"
-assert_contains "$home_nix" 'DISABLE_ERROR_REPORTING = "1";' "Claude error reporting is not disabled"
-for flag in DO_NOT_TRACK DISABLE_TELEMETRY DISABLE_ERROR_REPORTING \
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC OTEL_SDK_DISABLED \
-  OTEL_TRACES_EXPORTER OTEL_METRICS_EXPORTER OTEL_LOGS_EXPORTER \
-  PI_TELEMETRY PI_SKIP_VERSION_CHECK \
-  HOMEBREW_NO_ANALYTICS NEXT_TELEMETRY_DISABLED ASTRO_TELEMETRY_DISABLED \
-  TURBO_TELEMETRY_DISABLED DOTNET_CLI_TELEMETRY_OPTOUT \
-  POWERSHELL_TELEMETRY_OPTOUT CHECKPOINT_DISABLE SCARF_NO_ANALYTICS \
-  HF_HUB_DISABLE_TELEMETRY DVC_NO_ANALYTICS; do
-  assert_contains "$home_nix" "$flag" "$flag is not set"
+
+# Reaching the guard above means bootstrap.sh read profile.nix successfully, so
+# it both enabled nix-command and evaluated impurely.
+
+# rebuild.sh hands the switch to home-manager: intercept it instead of running it.
+switch_home="$TMP_ROOT/switch-home"
+mkdir -p "$switch_home/.nix-profile/bin"
+ln -s "$ROOT" "$switch_home/.dotfiles"
+cat >"$switch_home/.nix-profile/bin/home-manager" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$@" >"$HOME/switch-args"
+printf '%s\n' "$NIX_CONFIG" >"$HOME/switch-nix-config"
+STUB
+chmod +x "$switch_home/.nix-profile/bin/home-manager"
+HOME="$switch_home" bash "$ROOT/rebuild.sh" || fail "rebuild.sh failed on a healthy ~/.dotfiles pointer"
+switch_args=$(cat "$switch_home/switch-args")
+for expected in switch -b backup --impure --flake; do
+  assert_contains "$switch_args" "$expected" "rebuild.sh does not pass $expected to home-manager"
 done
-assert_contains "$(cat "$ROOT/home/.pi/agent/settings.json")" '"enableInstallTelemetry": false' \
-  "Pi install telemetry is not disabled in settings"
-assert_contains "$(cat "$ROOT/home/.pi/agent/settings.json")" '"enableAnalytics": false' \
-  "Pi analytics is not disabled in settings"
-assert_contains "$home_nix" 'disableCodexTelemetry' "Codex config telemetry gate is not activated"
-assert_contains "$home_nix" 'systemd.user.sessionVariables = privacyVariables // displayVariables;' \
-  "graphical apps do not inherit privacy controls"
-assert_contains "$(cat "$ROOT/scripts/ensure-codex-privacy.py")" 'analytics["enabled"] = False' \
-  "Codex analytics is not explicitly disabled"
-assert_contains "$(cat "$ROOT/scripts/ensure-codex-privacy.py")" 'otel["metrics_exporter"] = "none"' \
-  "Codex metrics export is not explicitly disabled"
-assert_contains "$(cat "$ROOT/README.md")" 'Telemetry is off across the managed stack.' \
-  "telemetry policy is undocumented"
-assert_not_contains "$home_nix" 'dangerously-skip-permissions' "unsafe Claude alias returned"
-assert_not_contains "$home_nix" 'codex --full-auto' "unsafe Codex alias returned"
-assert_contains "$bootstrap" 'github.com/kunchenguid/dotfiles' "macOS fallback does not point to current upstream"
-assert_not_contains "$bootstrap" 'ln -sfn' "bootstrap can overwrite an existing dotfiles pointer"
-assert_not_contains "$(cat "$ROOT/rebuild.sh")" 'ln -sfn' "rebuild can overwrite an existing dotfiles pointer"
-assert_contains "$bootstrap" 'experimental-features = nix-command flakes' "bootstrap does not enable flakes"
-assert_contains "$(cat "$ROOT/rebuild.sh")" 'experimental-features = nix-command flakes' \
-  "rebuild does not enable flakes for home-manager"
+assert_contains "$switch_args" '.dotfiles#default' "rebuild.sh switches to another flake output"
+assert_contains "$(cat "$switch_home/switch-nix-config")" 'experimental-features = nix-command flakes' \
+  "rebuild.sh does not enable flakes for the home-manager child process"
+
+# --- telemetry: assert the evaluated configuration, not the source text -------
+
+session_vars=$(hm_eval home.sessionVariables)
+graphical_vars=$(hm_eval systemd.user.sessionVariables)
+
+while IFS='=' read -r key value; do
+  [ -n "$key" ] || continue
+  jq -e --arg k "$key" --arg v "$value" '.[$k] == $v' >/dev/null <<<"$session_vars" \
+    || fail "shell sessions do not get $key=$value"
+  jq -e --arg k "$key" --arg v "$value" '.[$k] == $v' >/dev/null <<<"$graphical_vars" \
+    || fail "graphical sessions do not get $key=$value"
+done <<'VARS'
+DO_NOT_TRACK=1
+DISABLE_TELEMETRY=1
+DISABLE_ERROR_REPORTING=1
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+OTEL_SDK_DISABLED=true
+OTEL_TRACES_EXPORTER=none
+OTEL_METRICS_EXPORTER=none
+OTEL_LOGS_EXPORTER=none
+PI_TELEMETRY=0
+PI_SKIP_VERSION_CHECK=1
+GNHF_TELEMETRY=0
+NO_MISTAKES_TELEMETRY=0
+LAVISH_AXI_TELEMETRY=0
+HOMEBREW_NO_ANALYTICS=1
+NEXT_TELEMETRY_DISABLED=1
+ASTRO_TELEMETRY_DISABLED=1
+TURBO_TELEMETRY_DISABLED=1
+DOTNET_CLI_TELEMETRY_OPTOUT=1
+POWERSHELL_TELEMETRY_OPTOUT=1
+CHECKPOINT_DISABLE=1
+SCARF_NO_ANALYTICS=true
+HF_HUB_DISABLE_TELEMETRY=1
+DVC_NO_ANALYTICS=true
+VARS
+
+jq -e '.enableInstallTelemetry == false and .enableAnalytics == false' >/dev/null \
+  <"$ROOT/home/.pi/agent/settings.json" || fail "Pi install telemetry or analytics is still on"
+
+# --- Codex privacy: run the real activation entry against temp CODEX_HOMEs ----
+
+jq -e 'index("disableCodexTelemetry")' >/dev/null \
+  <<<"$(hm_eval home.activation --apply builtins.attrNames)" \
+  || fail "the Codex privacy entry does not run during activation"
+
+codex_privacy=$(nix_run build --no-link --print-out-paths --impure "path:$ROOT#ensure-codex-privacy")/bin/ensure-codex-privacy
+[ -x "$codex_privacy" ] || fail "the Codex privacy activation entry did not build"
+
+codex_toml() { nix_run eval --json --impure --expr "builtins.fromTOML (builtins.readFile \"$1\")"; }
+run_codex_privacy() { # run_codex_privacy <codex-home>
+  HOME="$TMP_ROOT/codex" CODEX_HOME="$1" "$codex_privacy"
+}
+assert_codex_private() { # assert_codex_private <config.toml> <context>
+  local parsed
+  parsed=$(codex_toml "$1")
+  jq -e '
+    .analytics.enabled == false
+    and .otel.exporter == "none"
+    and .otel.trace_exporter == "none"
+    and .otel.metrics_exporter == "none"
+    and .otel.log_user_prompt == false
+  ' >/dev/null <<<"$parsed" || fail "Codex telemetry stays on $2"
+}
+
+fresh="$TMP_ROOT/codex/fresh"
+mkdir -p "$TMP_ROOT/codex"
+run_codex_privacy "$fresh" || fail "the Codex privacy entry failed on a machine that never ran Codex"
+assert_codex_private "$fresh/config.toml" "for a fresh Codex home"
+[ "$(stat -c %a "$fresh")" = 700 ] || fail "the Codex home is not private"
+[ "$(stat -c %a "$fresh/config.toml")" = 600 ] || fail "a new Codex config is not private"
+
+before=$(cat "$fresh/config.toml")
+run_codex_privacy "$fresh" || fail "the Codex privacy entry is not re-runnable"
+[ "$(cat "$fresh/config.toml")" = "$before" ] || fail "the Codex privacy entry rewrites an already private config"
+
+existing="$TMP_ROOT/codex/existing"
+mkdir -p "$existing"
+cat >"$existing/config.toml" <<'TOML'
+model = "gpt-5"
+
+[analytics]
+enabled = true
+
+[otel]
+exporter = "otlp"
+TOML
+chmod 644 "$existing/config.toml"
+run_codex_privacy "$existing" || fail "the Codex privacy entry failed on an existing config"
+assert_codex_private "$existing/config.toml" "when the user had opted in"
+jq -e '.model == "gpt-5"' >/dev/null <<<"$(codex_toml "$existing/config.toml")" \
+  || fail "the Codex privacy entry dropped unrelated user settings"
+[ "$(stat -c %a "$existing/config.toml")" = 644 ] || fail "the Codex privacy entry changed the config's mode"
+
+linked="$TMP_ROOT/codex/linked"
+mkdir -p "$linked"
+printf 'model = "gpt-5"\n' >"$TMP_ROOT/codex/user-owned.toml"
+ln -s "$TMP_ROOT/codex/user-owned.toml" "$linked/config.toml"
+if run_codex_privacy "$linked" 2>/dev/null; then
+  fail "the Codex privacy entry followed a symlinked config"
+fi
+[ "$(cat "$TMP_ROOT/codex/user-owned.toml")" = 'model = "gpt-5"' ] \
+  || fail "the Codex privacy entry wrote through a symlink"
+
+if run_codex_privacy relative/codex 2>/dev/null; then
+  fail "the Codex privacy entry accepted a relative CODEX_HOME"
+fi
+
+# --- safe defaults: the committed profile adopts nothing ----------------------
+
+[ "$(hm_eval programs.zsh.enable)" = false ] || fail "safe profile takes over the shell"
+[ "$(hm_eval programs.starship.enable)" = false ] || fail "safe profile takes over the prompt"
+[ "$(hm_eval home.sessionVariables --apply 'v: v ? EDITOR')" = false ] \
+  || fail "safe profile overrides EDITOR outside a managed shell"
+[ "$(hm_eval home.sessionVariables.AGENTIC_DISPLAY_SERVER)" = '"auto"' ] \
+  || fail "safe profile forces a display server on the terminal"
+
+jq -e '
+  .cc == "claude" and .co == "codex"
+  and ([.[] | select(test("dangerously-skip-permissions|--full-auto"))] | length) == 0
+' >/dev/null <<<"$(hm_eval programs.zsh.shellAliases)" || fail "an unattended agent alias is back"
+
+jq -e 'index("pi-coding-agent")' >/dev/null \
+  <<<"$(hm_eval home.packages --apply 'ps: map (p: p.pname or p.name) ps')" \
+  || fail "the tested Pi package is not installed by Home Manager"
 
 jq -e . "$ROOT/home/.claude/settings.json" "$ROOT/home/.pi/agent/models.json" \
   "$ROOT/home/.pi/agent/settings.json" "$ROOT/home/.pi/agent/themes/rose-pine-moon.json" >/dev/null \
   || fail "managed JSON is invalid"
 
-managed_files=$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
-  "path:$ROOT#homeConfigurations.default.config.home.file" --apply builtins.attrNames | jq -r '.[]')
+managed_files=$(hm_eval home.file --apply builtins.attrNames | jq -r '.[]')
 for target in .zshrc .zshenv .profile .config/starship.toml .config/nvim .config/wezterm \
   .config/herdr .pi/agent .claude/settings.json .claude/CLAUDE.md .codex/AGENTS.md \
   .config/opencode/AGENTS.md .config/kdeglobals; do
   assert_not_contains "$managed_files" "/$target" "safe profile unexpectedly owns ~/$target"
 done
-[ "$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
-  "path:$ROOT#homeConfigurations.default.config.xfconf.settings")" = '{}' ] \
-  || fail "safe profile changes XFCE settings"
-[ "$(nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
-  "path:$ROOT#homeConfigurations.default.config.dconf.settings")" = '{}' ] \
-  || fail "safe profile changes GNOME settings"
-pass "Linux wiring, safety defaults, telemetry policy, shell, and JSON are valid"
+[ "$(hm_eval xfconf.settings)" = '{}' ] || fail "safe profile changes XFCE settings"
+[ "$(hm_eval dconf.settings)" = '{}' ] || fail "safe profile changes GNOME settings"
+
+pass "entry points guard themselves, telemetry is off in shell and graphical sessions, Codex stays private, and the safe profile adopts nothing"

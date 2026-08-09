@@ -92,6 +92,24 @@ have_pi_package() {
   [ -f "$PI_PACKAGE_DIR/package.json" ]
 }
 
+# The committed profile adopts no Pi resources, so ask the configuration what it
+# manages once managePiResources is on.
+ADOPTED_PI_PROFILE="(builtins.getFlake \"path:$ROOT\").homeConfigurations.default.extendModules {
+  specialArgs.profile = (import $ROOT/profile.nix) // { managePiResources = true; };
+}"
+
+pi_adopted_files() {
+  nix --extra-experimental-features 'nix-command flakes' eval --json --impure \
+    --expr "builtins.attrNames ($ADOPTED_PI_PROFILE).config.home.file" \
+    || fail "could not evaluate a Pi-managed Home Manager profile"
+}
+
+pi_extensions_link() {
+  nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths --impure \
+    --expr "($ADOPTED_PI_PROFILE).config.home.file.\".pi/agent/extensions\".source" \
+    || fail "could not build the Pi extensions link"
+}
+
 test_zero_coupling_and_state_file() {
   local source_files license_hits file separator
   source_files=$(find "$CALM_DIR" -type f | sort)
@@ -127,9 +145,10 @@ test_zero_coupling_and_state_file() {
   if git -C "$ROOT" ls-files --error-unmatch home/.pi/agent/calm >/dev/null 2>&1; then
     fail "the Calm state file is tracked in the repository"
   fi
-  assert_not_contains "$(cat "$ROOT/home.nix")" '.pi/agent/calm' "home.nix manages the Calm state file"
-  grep -q '^/home/.pi/agent/calm$' "$ROOT/.gitignore" \
-    || fail ".gitignore does not guard /home/.pi/agent/calm"
+  jq -e 'index(".pi/agent/calm") == null' >/dev/null <<<"$(pi_adopted_files)" \
+    || fail "Home Manager manages the Calm state file"
+  git -C "$ROOT" check-ignore -q home/.pi/agent/calm \
+    || fail "git does not ignore the Calm state file"
 
   # The shipped tree never references upstream paths or identifiers in code.
   assert_not_contains "$(cat "$CALM_DIR/index.ts")" "pi.events" "index.ts emits on a shared event bus"
@@ -142,10 +161,13 @@ test_zero_coupling_and_state_file() {
 test_static_typescript_and_repo_wiring() {
   # Home Manager links the extensions directory as a whole, so the calm
   # subdirectory auto-loads without any new declaration.
-  grep -q 'home.file.".pi/agent/extensions" = lib.mkIf profile.managePiResources' "$ROOT/home.nix" \
-    || fail "home.nix no longer links ~/.pi/agent/extensions as a directory"
-  grep -q "mkOutOfStoreSymlink \"\${dotfiles}/home/.pi/agent/extensions\"" "$ROOT/home.nix" \
-    || fail "home.nix changed the Pi extensions link target"
+  jq -e 'index(".pi/agent/extensions")' >/dev/null <<<"$(pi_adopted_files)" \
+    || fail "Home Manager no longer links ~/.pi/agent/extensions"
+  jq -e 'index(".pi/agent/extensions/calm") == null' >/dev/null <<<"$(pi_adopted_files)" \
+    || fail "calm needs a declaration of its own instead of auto-loading"
+  [ "$(readlink "$(pi_extensions_link)")" = "$HOME/.dotfiles/home/.pi/agent/extensions" ] \
+    || fail "the Pi extensions link no longer points at this repo's extensions directory"
+  [ -d "$CALM_DIR" ] || fail "calm does not live inside the linked extensions directory"
   [ -f "$CALM_DIR/index.ts" ] || fail "calm extension entry point missing"
   [ -f "$CALM_DIR/LICENSE" ] || fail "calm license file missing"
 
