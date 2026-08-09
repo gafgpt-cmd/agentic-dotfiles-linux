@@ -25,9 +25,25 @@ set -u
 
 TMP_ROOT=$(dotfiles_test_tmproot pi-calm)
 CALM_DIR="$ROOT/home/.pi/agent/extensions/calm"
-PI_PACKAGE_DIR=${PI_CALM_TEST_PACKAGE_DIR:-"$(npm root -g 2>/dev/null)/@earendil-works/pi-coding-agent"}
 TMUX_SOCKET="pi-calm-test-$$"
 TMUX_SESSION="pi-calm-e2e"
+
+# The proof target, not whatever Pi happens to be installed globally or on PATH:
+# an ambient Pi makes these contracts test a version the extension never claimed,
+# and a machine without one would skip them all and still exit 0.
+PI_PROOF_VERSION=0.84.0
+PI_PACKAGE_DIR=${PI_CALM_TEST_PACKAGE_DIR:-}
+PI_BIN=${PI_CALM_TEST_PI_BIN:-}
+if [ -z "$PI_PACKAGE_DIR" ] || [ -z "$PI_BIN" ]; then
+  pi_store=$(dotfiles_nix build --no-link --print-out-paths --impure "path:$ROOT#pi") \
+    || fail "could not build the flake-pinned Pi package"
+  PI_PACKAGE_DIR=${PI_PACKAGE_DIR:-"$pi_store/lib/node_modules/pi-monorepo"}
+  PI_BIN=${PI_BIN:-"$pi_store/bin/pi"}
+fi
+[ -f "$PI_PACKAGE_DIR/package.json" ] || fail "no Pi package at $PI_PACKAGE_DIR"
+[ "$(jq -r .version "$PI_PACKAGE_DIR/package.json")" = "$PI_PROOF_VERSION" ] \
+  || fail "the Calm contracts need Pi $PI_PROOF_VERSION, not $(jq -r .version "$PI_PACKAGE_DIR/package.json")"
+[ -x "$PI_BIN" ] || fail "no executable Pi at $PI_BIN"
 
 cleanup() {
   if command -v tmux >/dev/null 2>&1; then
@@ -88,9 +104,6 @@ build_node_fixture() {
   printf '%s\n' '{"type":"module"}' >"$fixture/package.json"
 }
 
-have_pi_package() {
-  [ -f "$PI_PACKAGE_DIR/package.json" ]
-}
 
 # The committed profile adopts no Pi resources, so ask the configuration what it
 # manages once managePiResources is on.
@@ -180,9 +193,7 @@ test_static_typescript_and_repo_wiring() {
   node --check "$ROOT/home/.pi/agent/extensions/terminal-status-title.js" \
     || fail "terminal-status-title.js has a JavaScript syntax error"
 
-  if ! have_pi_package; then
-    echo "skip: installed @earendil-works/pi-coding-agent package not found for TypeScript check"
-  elif ! command -v tsc >/dev/null 2>&1; then
+  if ! command -v tsc >/dev/null 2>&1; then
     echo "skip: tsc not found for TypeScript check"
   else
     local fixture="$TMP_ROOT/typecheck"
@@ -217,10 +228,6 @@ test_preference_and_command() {
   local fixture out status
   if ! command -v node >/dev/null 2>&1; then
     echo "skip: node not found for Pi Calm preference test"
-    return 0
-  fi
-  if ! have_pi_package; then
-    echo "skip: installed @earendil-works/pi-coding-agent package not found"
     return 0
   fi
 
@@ -381,8 +388,8 @@ JS
 
 test_rendering_adapters_and_tool_shells() {
   local fixture out status
-  if ! command -v node >/dev/null 2>&1 || ! have_pi_package; then
-    echo "skip: node or installed Pi package not found for rendering contract"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "skip: node not found for rendering contract"
     return 0
   fi
 
@@ -539,8 +546,8 @@ JS
 
 test_working_ship_and_lifecycle() {
   local fixture out status
-  if ! command -v node >/dev/null 2>&1 || ! have_pi_package; then
-    echo "skip: node or installed Pi package not found for working-ship contract"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "skip: node not found for working-ship contract"
     return 0
   fi
 
@@ -623,8 +630,8 @@ JS
 
 test_collapsed_thinking_degradation() {
   local fixture out status
-  if ! command -v node >/dev/null 2>&1 || ! have_pi_package; then
-    echo "skip: node or installed Pi package not found for adapter degradation"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "skip: node not found for adapter degradation"
     return 0
   fi
 
@@ -665,12 +672,12 @@ JS
 
 test_real_pi_tui_smoke() {
   local fixture agent project socket pane i
-  if ! command -v pi >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
-    echo "skip: pi or tmux not found for isolated real TUI smoke"
+  if ! command -v tmux >/dev/null 2>&1; then
+    echo "skip: tmux not found for isolated real TUI smoke"
     return 0
   fi
-  [ "$(pi --version 2>/dev/null || true)" = "0.84.0" ] \
-    || fail "real Pi smoke requires the installed Pi 0.84.0 proof target"
+  [ "$("$PI_BIN" --version 2>/dev/null || true)" = "$PI_PROOF_VERSION" ] \
+    || fail "real Pi smoke requires the Pi $PI_PROOF_VERSION proof target, not $("$PI_BIN" --version 2>/dev/null || true)"
 
   fixture="$TMP_ROOT/tui-smoke"
   agent="$fixture/agent"
@@ -735,7 +742,7 @@ export default function (pi: ExtensionAPI): void {
 TS
 
   tmux -L "$socket" new-session -d -s "$TMUX_SESSION" -x 100 -y 30 \
-    "cd '$project' && env PI_CODING_AGENT_DIR='$agent' PI_CODING_AGENT_SESSION_DIR='$fixture/sessions' PI_OFFLINE=1 CALM_SMOKE_MARKERS='$fixture/provider-markers.txt' pi --approve --no-context-files --no-skills --no-prompt-templates -e ./provider.ts"
+    "cd '$project' && env PI_CODING_AGENT_DIR='$agent' PI_CODING_AGENT_SESSION_DIR='$fixture/sessions' PI_OFFLINE=1 CALM_SMOKE_MARKERS='$fixture/provider-markers.txt' '$PI_BIN' --approve --no-context-files --no-skills --no-prompt-templates -e ./provider.ts"
   for i in $(seq 1 120); do
     tmux -L "$socket" capture-pane -p -t "$TMUX_SESSION" -S -100 >"$fixture/pane" 2>/dev/null || true
     grep -Fq 'provider.ts' "$fixture/pane" && break

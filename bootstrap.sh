@@ -48,12 +48,6 @@ profile_enabled() {
   (cd "$DIR" && nix eval --impure --raw --expr "if (import ./profile.nix).$1 then \"1\" else \"0\"")
 }
 MANAGE_SHELL="$(profile_enabled manageShell)"
-MANAGE_NVIM="$(profile_enabled manageNvim)"
-MANAGE_WEZTERM="$(profile_enabled manageWezterm)"
-MANAGE_HERDR="$(profile_enabled manageHerdr)"
-MANAGE_PI="$(profile_enabled managePiResources)"
-MANAGE_CLAUDE="$(profile_enabled manageClaudeSettings)"
-MANAGE_AGENT_INSTRUCTIONS="$(profile_enabled manageAgentInstructions)"
 
 echo "==> Step 2: symlink this repo to ~/.dotfiles"
 # home.nix resolves its mkOutOfStoreSymlink paths through ~/.dotfiles, so this
@@ -154,39 +148,30 @@ for bin in "${VERIFY_BINS[@]}"; do
   check "$bin installed" "missing from ~/.nix-profile/bin" "$rc"
 done
 
-# "<path under $HOME>|<path under this repo>". The three agent-instruction
-# links all point at one shared file, so the two sides cannot be assumed equal.
-VERIFY_LINKS=()
-[ "$MANAGE_NVIM" = "1" ] && VERIFY_LINKS+=('.config/nvim|home/.config/nvim')
-[ "$MANAGE_WEZTERM" = "1" ] && VERIFY_LINKS+=('.config/wezterm|home/.config/wezterm')
-[ "$MANAGE_HERDR" = "1" ] && VERIFY_LINKS+=('.config/herdr|home/.config/herdr')
-if [ "$MANAGE_PI" = "1" ]; then
-  VERIFY_LINKS+=(
-    '.pi/agent/themes|home/.pi/agent/themes'
-    '.pi/agent/extensions|home/.pi/agent/extensions'
-    '.pi/agent/models.json|home/.pi/agent/models.json'
-    '.pi/agent/settings.json|home/.pi/agent/settings.json'
-  )
+# Ask the configuration which files it adopts instead of restating home.nix
+# here: a hand-kept copy of that list silently stops covering every new
+# home.file declaration. Every adopted path must resolve either into this repo
+# (edit-in-place) or into the store (a file home-manager generates); anything
+# still resolving to a plain file was never adopted by the switch.
+ADOPTED_FILES="$(nix eval --impure --raw "path:$DIR#homeConfigurations.default.config.home.file" \
+  --apply 'fs: builtins.concatStringsSep "\n" (map (f: f.target) (builtins.attrValues fs))' \
+  2>/dev/null || true)"
+if [ -z "$ADOPTED_FILES" ]; then
+  check "adopted file list" "could not evaluate home.file from $DIR" 1
 fi
-if [ "$MANAGE_CLAUDE" = "1" ]; then
-  VERIFY_LINKS+=(
-    '.claude/settings.json|home/.claude/settings.json'
-    '.claude/statusline-command.sh|home/.claude/statusline-command.sh'
-  )
-fi
-if [ "$MANAGE_AGENT_INSTRUCTIONS" = "1" ]; then
-  VERIFY_LINKS+=(
-    '.claude/CLAUDE.md|home/AGENTS.md'
-    '.codex/AGENTS.md|home/AGENTS.md'
-    '.config/opencode/AGENTS.md|home/AGENTS.md'
-  )
-fi
-for entry in "${VERIFY_LINKS[@]}"; do
-  link="${entry%%|*}"
-  repo_file="${entry#*|}"
-  [ "$(readlink -f "$HOME/$link" 2>/dev/null)" = "$DIR/$repo_file" ] && rc=0 || rc=1
-  check "$HOME/$link -> $repo_file" "not an edit-in-place symlink into $DIR" "$rc"
-done
+while IFS= read -r target; do
+  target="${target#./}"
+  [ -n "$target" ] || continue
+  resolved="$(readlink -f "$HOME/$target" 2>/dev/null || true)"
+  case "$resolved" in
+    "$DIR"/*) rc=0; origin="this repo" ;;
+    /nix/store/*) rc=0; origin="the store" ;;
+    *) rc=1; origin="unmanaged" ;;
+  esac
+  check "$HOME/$target -> $origin" "resolves to '$resolved', which is neither $DIR nor the store" "$rc"
+done <<ADOPTED
+$ADOPTED_FILES
+ADOPTED
 
 if [ "$MANAGE_SHELL" = "1" ]; then
   [ -L "$HOME/.zshrc" ] && rc=0 || rc=1
