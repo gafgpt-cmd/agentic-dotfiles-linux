@@ -8,5 +8,10 @@ home/.config/herdr/*.sock
 result
 result-*
 
+# Pi credentials, runtime state, and Home Manager adoption backups
+/home/.pi/agent/auth.json
+/home/.pi/agent/**/*.backup
+/home/.pi/agent/calm
+
 # no-mistakes local validation state - never commit in this public repo
 .no-mistakes/

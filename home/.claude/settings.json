@@ -1,12 +1,7 @@
 {
-  "permissions": {
-    "defaultMode": "bypassPermissions"
-  },
-  "model": "claude-fable-5[1m]",
   "statusLine": {
     "type": "command",
     "command": "bash \"$HOME/.claude/statusline-command.sh\""
   },
-  "theme": "dark-ansi",
-  "skipDangerousModePermissionPrompt": true
+  "theme": "dark-ansi"
 }

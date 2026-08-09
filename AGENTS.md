@@ -2,12 +2,15 @@
 
 Deliberate decisions in this repo - do NOT silently revert them:
 
-- This is a Linux-only port of a macOS nix-darwin repo. Do not reintroduce nix-darwin, nix-homebrew, or `configuration.nix`. The macOS-to-Linux mapping is tabled at the end of README.md.
+- This is a Linux-only port of a macOS nix-darwin repo. Do not reintroduce nix-darwin, nix-homebrew, or `configuration.nix`. Desktop selection lives in `profile.nix`; supported modules are GNOME, XFCE, and none.
 - Standalone home-manager is a deliberate choice over NixOS: the target machines run their own distro (Debian 13/GNOME today) and only the user environment is managed here. Anything needing root or a system service is out of scope.
 - `herdr` is not in nixpkgs. It comes from its own upstream flake, pinned by tag in `flake.nix`. Bump the tag, do not vendor it.
 - `bootstrap.sh` step 4 uses the distro's zsh, not the Nix one, on purpose: a broken home-manager generation must never remove the login shell of a remote machine. Do not "simplify" it to `~/.nix-profile/bin/zsh`.
 - The flake is impure on purpose (`builtins.currentSystem`, `$USER`/`$HOME` via `getEnv`): nothing machine-specific may be committed. Do not "purify" it back to a hardcoded username or system; every nix/home-manager invocation must pass `--impure` (the scripts do).
 - New packages go in `home.packages` in `home.nix`. Unfree ones need no extra work: `allowUnfree` is set on `pkgs` in `flake.nix`.
+- Every config-adoption switch in `profile.nix` defaults off and the desktop defaults to none. Never flip one without reviewing the matching live target first.
+- Pi resources are selective links. Never manage `~/.pi/agent` as a whole or commit credentials, sessions, caches, or downloaded packages.
+- Telemetry is opt-out by invariant: keep every variable in `home.sessionVariables` and the Codex config updater/tests. New managed tools require a telemetry audit before addition.
 - Never commit `.no-mistakes/` validation evidence to this public repo. `.no-mistakes/` is gitignored; if a validation pipeline stages evidence into a branch, drop it before merging.
 
 ## Maintaining this file
