@@ -153,7 +153,7 @@ done
 # stops covering every new home.file declaration. Nix's own diagnostic is left
 # on the console so a failure here says why.
 ADOPTED_FILES="$(nix eval --impure --raw "path:$DIR#homeConfigurations.default.config.home.file" \
-  --apply 'fs: builtins.concatStringsSep "\n" (map (f: f.target + "\t" + f.source) (builtins.attrValues fs))' \
+  --apply 'fs: builtins.concatStringsSep "\n" (map (f: f.target + "\t" + f.source) (builtins.filter (f: f.enable) (builtins.attrValues fs)))' \
   || true)"
 if [ -z "$ADOPTED_FILES" ]; then
   check "adopted file list" "could not evaluate home.file from $DIR" 1

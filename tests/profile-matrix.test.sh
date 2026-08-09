@@ -52,12 +52,9 @@ for desktop in gnome xfce kde; do
         fi
         ;;
       xfce)
-        dconf_keys=$(jq -r --arg p "$profile" '.[$p].dconfKeys[]' <<<"$matrix")
-        if ! { [ "$xfconf_count" -gt 0 ] && [ "$gtk_enabled" = true ]; }; then
+        if ! { [ "$dconf_count" -eq 0 ] && [ "$xfconf_count" -gt 0 ] && [ "$gtk_enabled" = false ]; }; then
           fail "$profile does not isolate XFCE settings"
         fi
-        assert_not_contains "$dconf_keys" /wm/ "XFCE profile configures GNOME window-manager settings"
-        assert_not_contains "$dconf_keys" /shell/ "XFCE profile configures GNOME Shell settings"
         if [ "$session" = wayland ]; then
           xfconf_keys=$(jq -r --arg p "$profile" '.[$p].xfconfKeys[]' <<<"$matrix")
           assert_not_contains "$xfconf_keys" xfwm4 "XFCE Wayland profile configures the X11-only window manager"

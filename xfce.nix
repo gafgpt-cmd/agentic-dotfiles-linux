@@ -1,14 +1,7 @@
-{ config, lib, profile, ... }:
+{ lib, profile, ... }:
 
 {
-  # GTK settings work in both session types. XSettings and xfwm4 are X11-only;
-  # Xfce's Wayland roadmap explicitly replaces xfwm4 with xfwl4.
-  gtk = {
-    enable = true;
-    theme.name = "Adwaita-dark";
-    gtk4.theme = config.gtk.theme;
-  };
-
+  # XSettings and xfwm4 are X11-only. Generic GTK files remain user-owned.
   xfconf.settings = {
     thunar = {
       "last-view" = "ThunarDetailsView";
