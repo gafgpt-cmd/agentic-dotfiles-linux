@@ -148,27 +148,25 @@ for bin in "${VERIFY_BINS[@]}"; do
   check "$bin installed" "missing from ~/.nix-profile/bin" "$rc"
 done
 
-# Ask the configuration which files it adopts instead of restating home.nix
-# here: a hand-kept copy of that list silently stops covering every new
-# home.file declaration. Every adopted path must resolve either into this repo
-# (edit-in-place) or into the store (a file home-manager generates); anything
-# still resolving to a plain file was never adopted by the switch.
+# Ask the configuration which files it adopts, and what each one should be,
+# instead of restating home.nix here: a hand-kept copy of that list silently
+# stops covering every new home.file declaration. Nix's own diagnostic is left
+# on the console so a failure here says why.
 ADOPTED_FILES="$(nix eval --impure --raw "path:$DIR#homeConfigurations.default.config.home.file" \
-  --apply 'fs: builtins.concatStringsSep "\n" (map (f: f.target) (builtins.attrValues fs))' \
-  2>/dev/null || true)"
+  --apply 'fs: builtins.concatStringsSep "\n" (map (f: f.target + "\t" + f.source) (builtins.attrValues fs))' \
+  || true)"
 if [ -z "$ADOPTED_FILES" ]; then
   check "adopted file list" "could not evaluate home.file from $DIR" 1
 fi
-while IFS= read -r target; do
+while IFS="$(printf '\t')" read -r target source; do
   target="${target#./}"
   [ -n "$target" ] || continue
+  # Both sides are fully resolved, so an edit-in-place link lands on the same
+  # repo file and a generated one lands on the same store path.
+  expected="$(readlink -f "$source" 2>/dev/null || true)"
   resolved="$(readlink -f "$HOME/$target" 2>/dev/null || true)"
-  case "$resolved" in
-    "$DIR"/*) rc=0; origin="this repo" ;;
-    /nix/store/*) rc=0; origin="the store" ;;
-    *) rc=1; origin="unmanaged" ;;
-  esac
-  check "$HOME/$target -> $origin" "resolves to '$resolved', which is neither $DIR nor the store" "$rc"
+  { [ -n "$expected" ] && [ "$resolved" = "$expected" ]; } && rc=0 || rc=1
+  check "$HOME/$target -> ${expected:-$source}" "resolves to '$resolved' instead" "$rc"
 done <<ADOPTED
 $ADOPTED_FILES
 ADOPTED
