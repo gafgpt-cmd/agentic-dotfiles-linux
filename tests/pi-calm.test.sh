@@ -23,14 +23,28 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-TMP_ROOT=$(dotfiles_test_tmproot pi-calm)
 CALM_DIR="$ROOT/home/.pi/agent/extensions/calm"
 TMUX_SOCKET="pi-calm-test-$$"
 TMUX_SESSION="pi-calm-e2e"
+TMP_ROOT=$(dotfiles_test_tmproot pi-calm)
+
+cleanup() {
+  if command -v tmux >/dev/null 2>&1; then
+    tmux -L "$TMUX_SOCKET" kill-server 2>/dev/null || true
+  fi
+  if [ "${KEEP_TMP:-}" = 1 ]; then
+    printf 'kept disposable Pi Calm evidence: %s\n' "$TMP_ROOT" >&2
+    return
+  fi
+  dotfiles_test_cleanup "$TMP_ROOT"
+}
+trap cleanup EXIT
 
 # The proof target, not whatever Pi happens to be installed globally or on PATH:
 # an ambient Pi makes these contracts test a version the extension never claimed,
-# and a machine without one would skip them all and still exit 0.
+# and a machine without one would skip them all and still exit 0. The interpreter
+# is pinned for the same reason - this repo never installs node, so an ambient one
+# is whatever mise, nvm or the distro happened to leave on PATH.
 PI_PROOF_VERSION=0.84.0
 PI_PACKAGE_DIR=${PI_CALM_TEST_PACKAGE_DIR:-}
 PI_BIN=${PI_CALM_TEST_PI_BIN:-}
@@ -45,17 +59,20 @@ fi
   || fail "the Calm contracts need Pi $PI_PROOF_VERSION, not $(jq -r .version "$PI_PACKAGE_DIR/package.json")"
 [ -x "$PI_BIN" ] || fail "no executable Pi at $PI_BIN"
 
-cleanup() {
-  if command -v tmux >/dev/null 2>&1; then
-    tmux -L "$TMUX_SOCKET" kill-server 2>/dev/null || true
-  fi
-  if [ "${KEEP_TMP:-}" = 1 ]; then
-    printf 'kept disposable Pi Calm evidence: %s\n' "$TMP_ROOT" >&2
-    return
-  fi
-  dotfiles_test_cleanup "$TMP_ROOT"
-}
-trap cleanup EXIT
+NODE_BIN=${PI_CALM_TEST_NODE_BIN:-}
+if [ -z "$NODE_BIN" ]; then
+  node_store=$(dotfiles_nix build --no-link --print-out-paths --impure --expr \
+    "(builtins.getFlake \"path:$ROOT\").inputs.nixpkgs.legacyPackages.\${builtins.currentSystem}.nodejs") \
+    || fail "could not build the flake-pinned Node runtime"
+  NODE_BIN="$node_store/bin/node"
+fi
+[ -x "$NODE_BIN" ] || fail "no executable Node at $NODE_BIN"
+# The contracts import .ts entry points directly, which needs Node's built-in
+# type stripping (on by default from 23.6).
+case "$("$NODE_BIN" --version)" in
+  v[0-9].*|v1?.*|v2[0-2].*) fail "the Calm contracts need Node 23.6 or newer, not $("$NODE_BIN" --version)" ;;
+  v23.[0-5].*) fail "the Calm contracts need Node 23.6 or newer, not $("$NODE_BIN" --version)" ;;
+esac
 
 wait_for_text() {
   local file=$1 text=$2 i=0
@@ -190,7 +207,7 @@ test_static_typescript_and_repo_wiring() {
   [ -f "$CALM_DIR/LICENSE" ] || fail "calm license file missing"
 
   # JavaScript syntax of the pre-existing extension stays valid.
-  node --check "$ROOT/home/.pi/agent/extensions/terminal-status-title.js" \
+  "$NODE_BIN" --check "$ROOT/home/.pi/agent/extensions/terminal-status-title.js" \
     || fail "terminal-status-title.js has a JavaScript syntax error"
 
   if ! command -v tsc >/dev/null 2>&1; then
@@ -226,11 +243,6 @@ JSON
 
 test_preference_and_command() {
   local fixture out status
-  if ! command -v node >/dev/null 2>&1; then
-    echo "skip: node not found for Pi Calm preference test"
-    return 0
-  fi
-
   fixture="$TMP_ROOT/preference"
   mkdir -p "$fixture/agent" "$fixture/readonly-agent"
   build_node_fixture "$fixture"
@@ -239,7 +251,7 @@ test_preference_and_command() {
     EXT="$fixture/calm/index.ts" \
     AGENT_DIR="$fixture/agent" \
     READONLY_AGENT_DIR="$fixture/readonly-agent" \
-    node --input-type=module 2>&1 <<'JS'
+    "$NODE_BIN" --input-type=module 2>&1 <<'JS'
 import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -388,15 +400,10 @@ JS
 
 test_rendering_adapters_and_tool_shells() {
   local fixture out status
-  if ! command -v node >/dev/null 2>&1; then
-    echo "skip: node not found for rendering contract"
-    return 0
-  fi
-
   fixture="$TMP_ROOT/rendering"
   mkdir -p "$fixture/agent"
   build_node_fixture "$fixture"
-  out=$(cd "$fixture" && EXT="$fixture/calm/index.ts" AGENT_DIR="$fixture/agent" PI_PACKAGE_DIR="$PI_PACKAGE_DIR" node --input-type=module 2>&1 <<'JS'
+  out=$(cd "$fixture" && EXT="$fixture/calm/index.ts" AGENT_DIR="$fixture/agent" PI_PACKAGE_DIR="$PI_PACKAGE_DIR" "$NODE_BIN" --input-type=module 2>&1 <<'JS'
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -546,15 +553,10 @@ JS
 
 test_working_ship_and_lifecycle() {
   local fixture out status
-  if ! command -v node >/dev/null 2>&1; then
-    echo "skip: node not found for working-ship contract"
-    return 0
-  fi
-
   fixture="$TMP_ROOT/working-ship"
   mkdir -p "$fixture/agent"
   build_node_fixture "$fixture"
-  out=$(cd "$fixture" && EXT="$fixture/calm/index.ts" AGENT_DIR="$fixture/agent" PI_PACKAGE_DIR="$PI_PACKAGE_DIR" node --input-type=module 2>&1 <<'JS'
+  out=$(cd "$fixture" && EXT="$fixture/calm/index.ts" AGENT_DIR="$fixture/agent" PI_PACKAGE_DIR="$PI_PACKAGE_DIR" "$NODE_BIN" --input-type=module 2>&1 <<'JS'
 import { pathToFileURL } from "node:url";
 
 process.env.PI_CODING_AGENT_DIR = process.env.AGENT_DIR;
@@ -630,14 +632,9 @@ JS
 
 test_collapsed_thinking_degradation() {
   local fixture out status
-  if ! command -v node >/dev/null 2>&1; then
-    echo "skip: node not found for adapter degradation"
-    return 0
-  fi
-
   fixture="$TMP_ROOT/degradation"
   build_node_fixture "$fixture"
-  out=$(cd "$fixture" && EXT="$fixture/calm/index.ts" node --input-type=module 2>&1 <<'JS'
+  out=$(cd "$fixture" && EXT="$fixture/calm/index.ts" "$NODE_BIN" --input-type=module 2>&1 <<'JS'
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { pathToFileURL } from "node:url";
 const original = AssistantMessageComponent.prototype.updateContent;
