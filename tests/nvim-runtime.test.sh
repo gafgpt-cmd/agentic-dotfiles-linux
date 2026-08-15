@@ -45,6 +45,7 @@ printf 'existing checkout\n' >"$bootstrap_lazy/fixture"
 git -C "$bootstrap_lazy" add fixture
 git -C "$bootstrap_lazy" -c user.name=dotfiles-test -c user.email=dotfiles-test@example.invalid \
   commit -qm fixture
+fixture_commit=$(git -C "$bootstrap_lazy" rev-parse HEAD)
 git -C "$bootstrap_lazy" remote add origin https://github.com/folke/lazy.nvim.git
 lazy_commit=$(jq -r '."lazy.nvim".commit' "$NVIM_CONFIG/lazy-lock.json")
 if git -C "$bootstrap_lazy" cat-file -e "$lazy_commit^{commit}" 2>/dev/null; then
@@ -59,6 +60,16 @@ if ! run_nvim_with_data "$bootstrap_data" --headless \
 fi
 [ "$(git -C "$bootstrap_lazy" rev-parse HEAD)" = "$lazy_commit" ] \
   || fail "the existing Lazy checkout did not switch to the locked commit"
+git -C "$bootstrap_lazy" checkout -q "$fixture_commit"
+git -C "$bootstrap_lazy" remote set-url origin "$TMP_ROOT/unavailable-origin"
+if ! run_nvim_with_data "$bootstrap_data" --headless \
+  --cmd "lua package.preload['lazy'] = function() return { setup = function() end } end" \
+  +qa >"$bootstrap_log" 2>&1; then
+  cat "$bootstrap_log" >&2
+  fail "a locally cached Lazy commit could not be restored offline"
+fi
+[ "$(git -C "$bootstrap_lazy" rev-parse HEAD)" = "$lazy_commit" ] \
+  || fail "the cached Lazy commit was not restored offline"
 
 startup_log="$TMP_ROOT/startup.log"
 if ! run_nvim --headless +qa >"$startup_log" 2>&1; then
