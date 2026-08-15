@@ -144,15 +144,18 @@ if is_unix then
   config.use_ime = false
 
   local zsh_candidates = {
-    os.getenv("SHELL"),
     "/usr/bin/zsh",
     "/bin/zsh",
     "/usr/local/bin/zsh",
     wezterm.home_dir .. "/.nix-profile/bin/zsh",
   }
+  local shell = os.getenv("SHELL")
+  if shell and shell ~= "" then
+    table.insert(zsh_candidates, 1, shell)
+  end
   local zsh
   for _, candidate in ipairs(zsh_candidates) do
-    if candidate and candidate:match("/zsh$") then
+    if candidate:match("/zsh$") then
       local file = io.open(candidate, "rb")
       if file then
         file:close()

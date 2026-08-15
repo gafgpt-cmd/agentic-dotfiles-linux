@@ -101,6 +101,10 @@ find_lua() {
 }
 
 lua_bin=$(find_lua)
+test_home="$TMP_ROOT/home"
+mkdir -p "$test_home/.nix-profile/bin"
+printf '#!/bin/sh\n' >"$test_home/.nix-profile/bin/zsh"
+chmod +x "$test_home/.nix-profile/bin/zsh"
 harness="$TMP_ROOT/wezterm-harness.lua"
 cat >"$harness" <<'LUA'
 package.preload["wezterm"] = function()
@@ -115,23 +119,35 @@ package.preload["wezterm"] = function()
     executable_dir = "/usr/bin",
     font_with_fallback = function(families) return families end,
     gui = { enumerate_gpus = function() return {} end },
+    home_dir = os.getenv("HOME"),
     on = function() end,
     target_triple = "x86_64-unknown-linux-gnu",
     truncate_right = function(text) return text end,
   }
 end
 local config = assert(loadfile(os.getenv("WEZTERM_CONFIG")))()
-io.write(tostring(config.enable_wayland), "\n")
+if os.getenv("WEZTERM_PROBE") == "shell" then
+  io.write(config.default_prog and config.default_prog[1] or "default", "\n")
+else
+  io.write(tostring(config.enable_wayland), "\n")
+end
 LUA
 
 wezterm_backend() { # wezterm_backend [display-server]
   local config="$ROOT/home/.config/wezterm/wezterm.lua"
   if [ "$#" -eq 0 ]; then
-    env -u AGENTIC_DISPLAY_SERVER WEZTERM_CONFIG="$config" "$lua_bin" "$harness"
+    env -u AGENTIC_DISPLAY_SERVER HOME="$test_home" WEZTERM_CONFIG="$config" "$lua_bin" "$harness"
   else
-    env AGENTIC_DISPLAY_SERVER="$1" WEZTERM_CONFIG="$config" "$lua_bin" "$harness"
+    env HOME="$test_home" AGENTIC_DISPLAY_SERVER="$1" WEZTERM_CONFIG="$config" "$lua_bin" "$harness"
   fi
 }
+
+wezterm_shell=$(env -u SHELL HOME="$test_home" WEZTERM_PROBE=shell \
+  WEZTERM_CONFIG="$ROOT/home/.config/wezterm/wezterm.lua" "$lua_bin" "$harness")
+case "$wezterm_shell" in
+  */zsh) : ;;
+  *) fail "WezTerm does not select an available zsh when SHELL is unset" ;;
+esac
 
 [ "$(wezterm_backend wayland)" = true ] || fail "WezTerm does not enable native Wayland on a Wayland profile"
 [ "$(wezterm_backend x11)" = false ] || fail "WezTerm does not force X11 on an X11 profile"
