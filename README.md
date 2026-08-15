@@ -19,7 +19,7 @@ Running the switch builds:
 - Selective Pi resources: theme, terminal-title extension, Calm mode, model overrides, and pinned packages
 - Telemetry and error-reporting opt-outs across the managed agent and developer tools
 
-The committed profile adopts only the shared WezTerm config; the baseline ownership is described below, and [Make it yours](#make-it-yours) lists the remaining opt-in switches.
+The committed profile adopts only the shared WezTerm config and its Neovim launcher; the baseline ownership is described below, and [Make it yours](#make-it-yours) lists the remaining opt-in switches.
 
 ## What Home Manager does here
 
@@ -54,7 +54,7 @@ With the checked-in baseline profile (`desktop = "none"`, `manageWezterm = true`
 - Installs every package declared in `home.packages`, enables the Home Manager CLI, and installs Hack Nerd Font with user-level fontconfig integration.
 - Generates the user-environment setup that adds the Nix profiles to `PATH` and exports the telemetry opt-outs plus `AGENTIC_DISPLAY_SERVER=auto` to shell and systemd user sessions.
 - Runs the Codex privacy activation that preserves unrelated settings while enforcing the analytics and OpenTelemetry keys documented under [Telemetry policy](#telemetry-policy).
-- Adopts `~/.config/wezterm` from this repository. Existing shell, editor, agent, and desktop configuration remains untouched; [Make it yours](#make-it-yours) lists every switch and its scope.
+- Adopts `~/.config/wezterm` and the generated `~/.local/share/applications/nvim.desktop` launcher that opens Neovim through wrapped WezTerm. Existing shell, editor, agent, and other desktop configuration remains untouched; [Make it yours](#make-it-yours) lists every switch and its scope.
 
 This is not a replacement for the Linux distribution. It does not manage the kernel, drivers, display manager, system-wide packages, or root services. Debian, Ubuntu, Fedora, or Arch still own the operating system; Home Manager owns only the selected user environment.
 
@@ -142,12 +142,12 @@ If the client reports `mosh-server: command not found`, bypass PATH: `mosh --ser
 
 Username, home directory, and CPU architecture need no editing: they come from the environment at switch time.
 
-The checked-in `profile.nix` owns the shared WezTerm config and leaves every other established config untouched: `desktop = "none"`, `manageWezterm = true`, and every other adoption switch false. Review that WezTerm config before the first switch, then enable only the additional parts you want Home Manager to own:
+The checked-in `profile.nix` owns the shared WezTerm config plus its Neovim launcher and leaves every other established config untouched: `desktop = "none"`, `manageWezterm = true`, and every other adoption switch false. Review that WezTerm config before the first switch, then enable only the additional parts you want Home Manager to own:
 
 - `desktop`: `xfce`, `gnome`, `kde`, or `none`.
 - `displayServer`: `x11`, `wayland`, or `auto`. Explicit values select WezTerm's native backend; `auto` leaves toolkit detection alone.
 - `manageShell`: zsh files, aliases, editor variable, starship config, and login-shell setup.
-- `manageWezterm`: the shared terminal config; enabled in the checked-in profile.
+- `manageWezterm`: the shared terminal config and generated Neovim desktop launcher; enabled in the checked-in profile.
 - `manageNvim`, `manageHerdr`: the matching config directory; disabled by default.
 - `managePiResources`: Pi settings, model overrides, themes, and extensions; never credentials, sessions, caches, or runtime state.
 - `manageClaudeSettings`: off by default so an established Claude setup is not replaced.

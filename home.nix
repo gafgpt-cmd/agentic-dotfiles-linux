@@ -142,20 +142,22 @@ in
 
   # The distro launcher requests a generic terminal, whose WezTerm adapter
   # passes `-e` as the child program. Bypass it with the wrapped binary.
-  home.file.".local/share/applications/nvim.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Neovim
-    GenericName=Text Editor
-    Comment=Edit text files
-    TryExec=${weztermWrapped}/bin/wezterm
-    Exec=${weztermWrapped}/bin/wezterm start -- ${pkgs.neovim}/bin/nvim %F
-    Icon=nvim
-    Terminal=false
-    Categories=Utility;TextEditor;
-    StartupNotify=false
-    MimeType=text/english;text/plain;text/x-makefile;text/x-c++hdr;text/x-c++src;text/x-chdr;text/x-csrc;text/x-java;text/x-moc;text/x-pascal;text/x-tcl;text/x-tex;application/x-shellscript;text/x-c;text/x-c++;
-  '';
+  home.file.".local/share/applications/nvim.desktop" = lib.mkIf profile.manageWezterm {
+    text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Neovim
+      GenericName=Text Editor
+      Comment=Edit text files
+      TryExec=${weztermWrapped}/bin/wezterm
+      Exec=${weztermWrapped}/bin/wezterm start -- ${pkgs.neovim}/bin/nvim %F
+      Icon=nvim
+      Terminal=false
+      Categories=Utility;TextEditor;
+      StartupNotify=false
+      MimeType=text/english;text/plain;text/x-makefile;text/x-c++hdr;text/x-c++src;text/x-chdr;text/x-csrc;text/x-java;text/x-moc;text/x-pascal;text/x-tcl;text/x-tex;application/x-shellscript;text/x-c;text/x-c++;
+    '';
+  };
 
   # Edit-in-place: the real file stays in my repo, ~/.config just points at it.
   home.file.".config/wezterm" = lib.mkIf profile.manageWezterm {

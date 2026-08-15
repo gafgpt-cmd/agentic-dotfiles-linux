@@ -183,6 +183,15 @@ fi
 
 # --- baseline ownership: only WezTerm is adopted -------------------------------
 
+safe_profile=$(dotfiles_hm_profile 'manageWezterm = false;')
+safe_files=$(dotfiles_hm_targets "$safe_profile")
+for target in "${DOTFILES_ADOPTABLE_PATHS[@]}"; do
+  if dotfiles_owns "$safe_files" "$target"; then
+    fail "the all-off profile unexpectedly adopts ~/$target"
+  fi
+done
+wezterm_profile=$(dotfiles_hm_profile 'manageWezterm = true;')
+
 [ "$(hm_eval programs.zsh.enable)" = false ] || fail "safe profile takes over the shell"
 [ "$(hm_eval programs.starship.enable)" = false ] || fail "safe profile takes over the prompt"
 [ "$(hm_eval home.sessionVariables --apply 'v: v ? EDITOR')" = false ] \
@@ -214,8 +223,8 @@ managed_wezterm=$(dotfiles_nix eval --raw --impure \
 [ "$managed_wezterm" != "$raw_wezterm" ] \
   || fail "WezTerm is not GPU-wrapped for a non-NixOS host"
 
-nvim_desktop=$(dotfiles_nix eval --raw --impure \
-  "path:$ROOT#homeConfigurations.default.config.home.file.\".local/share/applications/nvim.desktop\".text") \
+nvim_desktop=$(dotfiles_nix eval --raw --impure --expr \
+  "($wezterm_profile).config.home.file.\".local/share/applications/nvim.desktop\".text") \
   || fail "the Neovim desktop launcher is not defined"
 managed_nvim=$(dotfiles_nix eval --raw --impure \
   "path:$ROOT#homeConfigurations.default.pkgs.neovim.outPath")
@@ -246,6 +255,8 @@ managed_files=$(hm_eval home.file --apply 'fs: map (f: f.target) (builtins.attrV
   | dotfiles_normalize_targets)
 dotfiles_owns "$managed_files" ".config/wezterm" \
   || fail "the baseline profile no longer owns the canonical WezTerm config"
+dotfiles_owns "$managed_files" ".local/share/applications/nvim.desktop" \
+  || fail "WezTerm adoption no longer owns the Neovim desktop launcher"
 adopted_files=$(dotfiles_hm_targets "$(dotfiles_hm_profile '
   manageShell = true; manageNvim = true; manageWezterm = true; manageHerdr = true;
   managePiResources = true; manageClaudeSettings = true; manageAgentInstructions = true;

@@ -1,5 +1,5 @@
 {
-  # Install tools and privacy controls; adopt only the live WezTerm config.
+  # Install tools and privacy controls; adopt WezTerm and its Neovim launcher.
   # Supported desktop values: "none", "gnome", "xfce", "kde".
   desktop = "none";
   # "auto" leaves toolkit detection alone; explicit values select terminal backend.

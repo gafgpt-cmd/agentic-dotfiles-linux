@@ -84,7 +84,8 @@ DOTFILES_PROTECTED_PATHS=(
 # shellcheck disable=SC2034
 DOTFILES_ADOPTABLE_PATHS=(
   .zshrc .zshenv .config/starship.toml .config/nvim .config/wezterm
-  .config/herdr .pi/agent .claude/settings.json .claude/CLAUDE.md
+  .config/herdr .local/share/applications/nvim.desktop
+  .pi/agent .claude/settings.json .claude/CLAUDE.md
   .codex/AGENTS.md .config/opencode/AGENTS.md
 )
 
