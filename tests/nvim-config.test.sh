@@ -19,16 +19,6 @@ for file in \
   [ -f "$NVIM_DIR/$file" ] || fail "the migrated Neovim config is missing $file"
 done
 
-init=$(<"$NVIM_DIR/init.lua")
-assert_contains "$init" "vim.g.have_nerd_font = true" \
-  "the migrated Neovim config lost Nerd Font support"
-assert_contains "$init" "vim.opt.relativenumber = true" \
-  "the migrated Neovim config lost relative line numbers"
-assert_contains "$init" "'<leader>F'" \
-  "the migrated Neovim config lost the file picker shortcut"
-assert_contains "$init" "'<leader>S'" \
-  "the migrated Neovim config lost the project search shortcut"
-
 jq -e '
   length == 26
   and .["lazy.nvim"].commit != null

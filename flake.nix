@@ -80,6 +80,7 @@
       packages.${system} = {
         ensure-codex-privacy = codexPrivacy;
         pi = pi-pkg;
+        wezterm-raw = pkgs.wezterm;
       };
     };
 }

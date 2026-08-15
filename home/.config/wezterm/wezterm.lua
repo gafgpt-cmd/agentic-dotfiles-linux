@@ -41,6 +41,7 @@ config.color_scheme = "rose-pine-moon"
 -- Nerd Font first on both platforms; the trailing entries are the fonts each OS
 -- can be relied on to already have, so a fresh machine still renders sanely.
 local font_fallback = {
+  "Hack Nerd Font",
   "FiraCode Nerd Font",
   "CaskaydiaCove Nerd Font",
   "Symbols Nerd Font Mono",
@@ -61,13 +62,10 @@ config.colors = {
   selection_fg = rp.base,
 }
 
--- The wezterm terminfo entry is compiled into ~/.terminfo on Unix (see
--- common.d/term-ssh.sh for the ssh fallback). Unlike xterm-256color it
--- advertises Tc, Setulc, Smulx and Sync, which is what lets nvim do undercurl
--- and colored underlines. Windows has no terminfo database, and forcing an
--- unknown TERM breaks curses apps under WSL, so leave the default there.
+-- Keep remote curses applications usable on hosts without WezTerm's terminfo.
+-- Windows has no terminfo database, so leave the default there.
 if is_unix then
-  config.term = "wezterm"
+  config.term = "xterm-256color"
 end
 
 -- Rendering. WebGpu is smoother than the default OpenGL front end, but
@@ -144,19 +142,38 @@ if is_unix then
   -- to xkbcommon's own compose handling rather than losing them.
   -- Re-enable this only if you start needing a CJK input method here.
   config.use_ime = false
-  -- tmux owns persistence and panes; see ~/.tmux.conf.
-  config.default_prog = { "/usr/bin/zsh", "-l" }
-  -- The login shell in /etc/passwd is still bash, so anything that spawns $SHELL
-  -- (tmux panes, editors, `!` escapes) would drop back to bash without this.
-  config.set_environment_variables = { SHELL = "/usr/bin/zsh" }
+
+  local zsh_candidates = {
+    os.getenv("SHELL"),
+    "/usr/bin/zsh",
+    "/bin/zsh",
+    "/usr/local/bin/zsh",
+    wezterm.home_dir .. "/.nix-profile/bin/zsh",
+  }
+  local zsh
+  for _, candidate in ipairs(zsh_candidates) do
+    if candidate and candidate:match("/zsh$") then
+      local file = io.open(candidate, "rb")
+      if file then
+        file:close()
+        zsh = candidate
+        break
+      end
+    end
+  end
+
   config.launch_menu = {
     {
       label = "Agent workspace (tmux)",
       args = { "tmux", "new-session", "-A", "-s", "main" },
     },
-    { label = "Zsh", args = { "/usr/bin/zsh", "-l" } },
     { label = "Bash", args = { "bash", "-l" } },
   }
+  if zsh then
+    config.default_prog = { zsh, "-l" }
+    config.set_environment_variables = { SHELL = zsh }
+    table.insert(config.launch_menu, 2, { label = "Zsh", args = { zsh, "-l" } })
+  end
 else
   -- Deliberately no default_prog on Windows: pointing it at pwsh.exe hard-fails
   -- if PowerShell 7 is not installed, whereas the built-in default always

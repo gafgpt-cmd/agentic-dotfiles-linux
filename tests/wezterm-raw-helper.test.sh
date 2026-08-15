@@ -5,45 +5,15 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 config="$ROOT/home/.config/wezterm/wezterm.lua"
-wrapper=${WEZTERM_BIN:-}
 raw_bin=${WEZTERM_RAW_BIN:-}
 
-if [ -z "$wrapper" ]; then
-  wrapper=$(command -v wezterm || true)
-fi
-if [ -z "$wrapper" ]; then
-  printf 'skip - no WezTerm executable found\n'
-  exit 0
-fi
-
 if [ -z "$raw_bin" ]; then
-  raw_bin=$(python3 - "$wrapper" <<'PY'
-import os
-import re
-import sys
-
-path = os.path.realpath(sys.argv[1])
-try:
-    data = open(path, "rb").read()
-except OSError:
-    print("")
-    raise SystemExit
-
-if data.startswith(b"\x7fELF") and "/nix/store/" in path and "/bin/wezterm" in path:
-    print(path)
-    raise SystemExit
-
-text = data.decode(errors="ignore")
-matches = re.findall(r'(/nix/store/[^"\s]+-wezterm-[^"\s]+/bin/wezterm)', text)
-print(matches[-1] if matches else "")
-PY
-  )
+  raw_out=$(dotfiles_nix build --no-link --print-out-paths --impure "path:$ROOT#wezterm-raw") \
+    || fail "the raw WezTerm flake package did not build"
+  raw_bin="$raw_out/bin/wezterm"
 fi
 
-if [ -z "$raw_bin" ] || [ ! -x "$raw_bin" ]; then
-  printf 'skip - no raw Nix WezTerm binary found behind %s\n' "$wrapper"
-  exit 0
-fi
+[ -x "$raw_bin" ] || fail "the raw WezTerm binary is not executable"
 
 if ! stderr=$(env \
   -u LIBGL_DRIVERS_PATH \

@@ -197,6 +197,6 @@ echo
 if [ "$MANAGE_SHELL" = "1" ]; then
   echo "==> Done, all checks passed. Log out and back in to land in zsh."
 else
-  echo "==> Done, all checks passed. Existing shell and app configs were not adopted."
+  echo "==> Done, all checks passed. Existing shell files stayed untouched."
 fi
 echo "    Use ./rebuild.sh for future changes."

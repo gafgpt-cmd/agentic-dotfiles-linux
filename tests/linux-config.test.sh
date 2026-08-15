@@ -219,11 +219,24 @@ nvim_desktop=$(dotfiles_nix eval --raw --impure \
   || fail "the Neovim desktop launcher is not defined"
 managed_nvim=$(dotfiles_nix eval --raw --impure \
   "path:$ROOT#homeConfigurations.default.pkgs.neovim.outPath")
-assert_contains "$nvim_desktop" "Terminal=false" \
-  "the Neovim desktop launcher still requests a generic terminal"
-assert_contains "$nvim_desktop" \
-  "Exec=$managed_wezterm/bin/wezterm start -- $managed_nvim/bin/nvim %F" \
-  "the Neovim desktop launcher does not invoke wrapped WezTerm directly"
+desktop_file="$TMP_ROOT/nvim.desktop"
+printf '%s' "$nvim_desktop" >"$desktop_file"
+python3 - "$desktop_file" "$managed_wezterm/bin/wezterm" "$managed_nvim/bin/nvim" <<'PY' \
+  || fail "the Neovim desktop launcher does not invoke wrapped WezTerm directly"
+import configparser
+import shlex
+import sys
+
+parser = configparser.RawConfigParser(interpolation=None, strict=True)
+parser.optionxform = str
+with open(sys.argv[1], encoding="utf-8") as desktop:
+    parser.read_file(desktop)
+entry = parser["Desktop Entry"]
+assert entry.getboolean("Terminal") is False
+assert shlex.split(entry["Exec"]) == [
+    sys.argv[2], "start", "--", sys.argv[3], "%F"
+]
+PY
 
 jq -e . "$ROOT/home/.claude/settings.json" "$ROOT/home/.pi/agent/models.json" \
   "$ROOT/home/.pi/agent/settings.json" "$ROOT/home/.pi/agent/themes/rose-pine-moon.json" >/dev/null \
