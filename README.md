@@ -14,7 +14,7 @@ Running the switch builds:
 - Nix user packages (Git, GitHub CLI, ripgrep, fd, fzf, jq, lazygit, tmux, mise, uv, TypeScript, shellcheck, shfmt, Mosh, Neovim, WezTerm, Claude Code, Pi, herdr, Hack Nerd Font)
 - Selectable GNOME/XFCE settings, a KDE compatibility profile, or no desktop settings
 - Shell (zsh, aliases, starship prompt)
-- Editor (a pinned 26-plugin Kickstart Neovim config with Tokyo Night)
+- Editor (a fully pinned Kickstart Neovim config with Tokyo Night)
 - Terminal (WezTerm with rose-pine moon and clear inactive-window dimming)
 - Selective Pi resources: theme, terminal-title extension, Calm mode, model overrides, and pinned packages
 - Telemetry and error-reporting opt-outs across the managed agent and developer tools
@@ -169,7 +169,7 @@ programs.git = {
 
 The `cc` and `co` aliases launch Claude and Codex with their normal configured permission behavior. This fork does not force bypass or full-auto modes.
 
-The checked-in Neovim tree is the feature-rich pinned Kickstart configuration, including its Lazy lock, LSP/Mason setup, Treesitter, completion, formatting, and authored helper modules. `manageNvim` is still off in the safe profile, so an established machine keeps its existing `~/.config/nvim` until you explicitly opt in.
+The checked-in Neovim tree is the feature-rich pinned Kickstart configuration, including its Lazy lock, LSP/Mason setup, Treesitter, completion, formatting, and authored helper modules. `manageNvim` is still off in the baseline profile, so an established machine keeps its existing `~/.config/nvim` until you explicitly opt in.
 
 ## Repo tour
 
