@@ -13,6 +13,7 @@ Deliberate decisions in this repo - do NOT silently revert them:
 - Config-adoption switches in `profile.nix` default off except `manageWezterm`, which this repo has adopted (see the WezTerm entry above); the desktop still defaults to none. Never flip another without reviewing the matching live target first.
 - Pi resources are selective links. Never manage `~/.pi/agent` as a whole or commit credentials, sessions, caches, or downloaded packages.
 - Telemetry is opt-out by invariant: keep every variable in `home.sessionVariables` and the Codex config updater/tests. New managed tools require a telemetry audit before addition.
+- `home/.config/nvim` is the full pinned 26-plugin Kickstart configuration, not the former minimal stub. `manageNvim` remains off by default; preserve the lock and run `tests/nvim-config.test.sh` plus `tests/nvim-runtime.test.sh` when changing it.
 - Never commit `.no-mistakes/` validation evidence to this public repo. `.no-mistakes/` is gitignored; if a validation pipeline stages evidence into a branch, drop it before merging.
 
 ## Maintaining this file

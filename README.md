@@ -14,7 +14,7 @@ Running the switch builds:
 - Nix user packages (Git, GitHub CLI, ripgrep, fd, fzf, jq, lazygit, tmux, mise, uv, TypeScript, shellcheck, shfmt, Mosh, Neovim, WezTerm, Claude Code, Pi, herdr, Hack Nerd Font)
 - Selectable GNOME/XFCE settings, a KDE compatibility profile, or no desktop settings
 - Shell (zsh, aliases, starship prompt)
-- Editor (Neovim config with the rose-pine moon theme)
+- Editor (a pinned 26-plugin Kickstart Neovim config with Tokyo Night)
 - Terminal (WezTerm with rose-pine moon and clear inactive-window dimming)
 - Selective Pi resources: theme, terminal-title extension, Calm mode, model overrides, and pinned packages
 - Telemetry and error-reporting opt-outs across the managed agent and developer tools
@@ -107,6 +107,10 @@ nix --extra-experimental-features 'nix-command flakes' build .#homeConfiguration
 ./tests/wezterm-raw-helper.test.sh
 ./tests/pi-calm.test.sh
 ./tests/build-matrix.sh
+# Static Neovim ownership/lock checks
+bash tests/nvim-config.test.sh
+# Isolated Neovim runtime test; downloads the pinned plugins and Mason tools
+bash tests/nvim-runtime.test.sh
 ```
 
 `--impure` is required: the flake reads `$USER`, `$HOME`, and the CPU architecture from the environment.
@@ -165,13 +169,15 @@ programs.git = {
 
 The `cc` and `co` aliases launch Claude and Codex with their normal configured permission behavior. This fork does not force bypass or full-auto modes.
 
+The checked-in Neovim tree is the feature-rich pinned Kickstart configuration, including its Lazy lock, LSP/Mason setup, Treesitter, completion, formatting, and authored helper modules. `manageNvim` is still off in the safe profile, so an established machine keeps its existing `~/.config/nvim` until you explicitly opt in.
+
 ## Repo tour
 
 The files in the configuration-to-activation flow are explained under [What Home Manager does here](#what-home-manager-does-here).
 
 - `gnome.nix` / `xfce.nix` / `kde.nix` - optional Linux desktop compatibility modules.
 - `home/` - edit-in-place app and agent resources.
-- `tests/` - Linux wiring, full desktop/session matrix, and Pi Calm behavior tests.
+- `tests/` - Linux wiring, full desktop/session matrix, Pi Calm behavior, and isolated Neovim runtime tests.
 
 ## How the symlinks work
 
