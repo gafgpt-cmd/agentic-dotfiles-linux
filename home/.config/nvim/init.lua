@@ -228,6 +228,7 @@ if not vim.uv.fs_stat(lazypath) then
   run_git { 'git', 'clone', '--filter=blob:none', '--branch=stable', lazyrepo, lazypath }
 end
 if run_git { 'git', '-C', lazypath, 'rev-parse', 'HEAD' } ~= lazy_commit then
+  run_git { 'git', '-C', lazypath, 'fetch', '--filter=blob:none', 'origin', lazy_commit }
   run_git { 'git', '-C', lazypath, 'checkout', lazy_commit }
 end
 vim.opt.rtp:prepend(lazypath)

@@ -23,13 +23,42 @@ managed_nvim=$(dotfiles_nix eval --raw --impure \
 [ -x "$managed_nvim" ] || fail "the managed Neovim binary does not exist"
 
 run_nvim() {
+  run_nvim_with_data "$DATA_HOME" "$@"
+}
+
+run_nvim_with_data() {
+  local data_home=$1
+  shift
   timeout 300s env \
     XDG_CONFIG_HOME="$CONFIG_HOME" \
-    XDG_DATA_HOME="$DATA_HOME" \
+    XDG_DATA_HOME="$data_home" \
     XDG_STATE_HOME="$STATE_HOME" \
     XDG_CACHE_HOME="$CACHE_HOME" \
     "$managed_nvim" "$@"
 }
+
+bootstrap_data="$TMP_ROOT/bootstrap-data"
+bootstrap_lazy="$bootstrap_data/nvim/lazy/lazy.nvim"
+mkdir -p "$bootstrap_lazy"
+git -C "$bootstrap_lazy" init -q
+printf 'existing checkout\n' >"$bootstrap_lazy/fixture"
+git -C "$bootstrap_lazy" add fixture
+git -C "$bootstrap_lazy" -c user.name=dotfiles-test -c user.email=dotfiles-test@example.invalid \
+  commit -qm fixture
+git -C "$bootstrap_lazy" remote add origin https://github.com/folke/lazy.nvim.git
+lazy_commit=$(jq -r '."lazy.nvim".commit' "$NVIM_CONFIG/lazy-lock.json")
+if git -C "$bootstrap_lazy" cat-file -e "$lazy_commit^{commit}" 2>/dev/null; then
+  fail "the existing Lazy fixture already contains the locked commit"
+fi
+bootstrap_log="$TMP_ROOT/bootstrap.log"
+if ! run_nvim_with_data "$bootstrap_data" --headless \
+  --cmd "lua package.preload['lazy'] = function() return { setup = function() end } end" \
+  +qa >"$bootstrap_log" 2>&1; then
+  cat "$bootstrap_log" >&2
+  fail "an existing Lazy checkout could not adopt the locked commit"
+fi
+[ "$(git -C "$bootstrap_lazy" rev-parse HEAD)" = "$lazy_commit" ] \
+  || fail "the existing Lazy checkout did not switch to the locked commit"
 
 startup_log="$TMP_ROOT/startup.log"
 if ! run_nvim --headless +qa >"$startup_log" 2>&1; then

@@ -156,9 +156,14 @@ if is_unix then
   local zsh
   for _, candidate in ipairs(zsh_candidates) do
     if candidate:match("/zsh$") then
-      local file = io.open(candidate, "rb")
-      if file then
-        file:close()
+      local executable = wezterm.run_child_process({
+        "/bin/sh",
+        "-c",
+        'test -f "$1" && test -x "$1"',
+        "wezterm",
+        candidate,
+      })
+      if executable then
         zsh = candidate
         break
       end
@@ -324,13 +329,10 @@ table.insert(config.hyperlink_rules, {
 -- code references. Everything else (PDFs, images, directories) keeps its normal
 -- desktop handler.
 wezterm.on("open-uri", function(window, pane, uri)
-  local file, line = uri:match("^file://[^/]*/?(.+)#(%d+)$")
-  if file and line then
-    if is_unix then
-      file = "/" .. file
-    end
+  local url = wezterm.url.parse(uri)
+  if url.scheme == "file" and url.fragment and url.fragment:match("^%d+$") then
     window:perform_action(
-      wezterm.action.SpawnCommandInNewTab({ args = { "nvim", "+" .. line, file } }),
+      wezterm.action.SpawnCommandInNewTab({ args = { "nvim", "+" .. url.fragment, url.file_path } }),
       pane
     )
     return false -- suppress default handling
