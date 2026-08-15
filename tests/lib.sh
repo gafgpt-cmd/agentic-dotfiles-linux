@@ -74,8 +74,8 @@ assert_not_contains() {
 # Paths the user keeps unless a profile switch explicitly adopts them.
 # shellcheck disable=SC2034
 DOTFILES_PROTECTED_PATHS=(
-  .zshrc .zshenv .profile .config/starship.toml .config/nvim .config/wezterm
-  .config/herdr .pi/agent .claude/settings.json .claude/CLAUDE.md
+  .zshrc .zshenv .profile .config/starship.toml .config/nvim .config/herdr
+  .pi/agent .claude/settings.json .claude/CLAUDE.md
   .codex/AGENTS.md .config/opencode/AGENTS.md .config/kdeglobals
 )
 

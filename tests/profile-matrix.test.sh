@@ -105,9 +105,19 @@ harness="$TMP_ROOT/wezterm-harness.lua"
 cat >"$harness" <<'LUA'
 package.preload["wezterm"] = function()
   return {
+    action = {
+      EmitEvent = function() return {} end,
+      SpawnCommandInNewTab = function() return {} end,
+      SpawnCommandInNewWindow = function() return {} end,
+    },
     config_builder = function() return {} end,
-    font = function(family) return { family = family } end,
+    default_hyperlink_rules = function() return {} end,
+    executable_dir = "/usr/bin",
+    font_with_fallback = function(families) return families end,
+    gui = { enumerate_gpus = function() return {} end },
     on = function() end,
+    target_triple = "x86_64-unknown-linux-gnu",
+    truncate_right = function(text) return text end,
   }
 end
 local config = assert(loadfile(os.getenv("WEZTERM_CONFIG")))()

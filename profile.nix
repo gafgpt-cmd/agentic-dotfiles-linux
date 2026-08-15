@@ -1,5 +1,5 @@
 {
-  # Safe first switch: install tools and privacy controls without adopting live configs.
+  # Install tools and privacy controls; adopt only the live WezTerm config.
   # Supported desktop values: "none", "gnome", "xfce", "kde".
   desktop = "none";
   # "auto" leaves toolkit detection alone; explicit values select terminal backend.
@@ -7,7 +7,7 @@
 
   manageShell = false;
   manageNvim = false;
-  manageWezterm = false;
+  manageWezterm = true;
   manageHerdr = false;
   managePiResources = false;
   manageClaudeSettings = false;

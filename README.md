@@ -19,7 +19,7 @@ Running the switch builds:
 - Selective Pi resources: theme, terminal-title extension, Calm mode, model overrides, and pinned packages
 - Telemetry and error-reporting opt-outs across the managed agent and developer tools
 
-The committed profile is deliberately non-invasive; the baseline ownership is described below, and [Make it yours](#make-it-yours) lists the opt-in switches.
+The committed profile adopts only the shared WezTerm config; the baseline ownership is described below, and [Make it yours](#make-it-yours) lists the remaining opt-in switches.
 
 ## What Home Manager does here
 
@@ -41,7 +41,7 @@ flake.nix + flake.lock + home.nix + profile.nix
 
 In this repository:
 
-- `flake.nix` declares the nixpkgs, Home Manager, separate nixpkgs snapshot for Pi, and herdr inputs and exposes the configurations Home Manager can build; `flake.lock` locks those inputs to exact revisions.
+- `flake.nix` declares the nixpkgs, Home Manager, nixGL, separate nixpkgs snapshot for Pi, and herdr inputs and exposes the configurations Home Manager can build; `flake.lock` locks those inputs to exact revisions.
 - `home.nix` declares the programs, font, privacy controls, PATH entries, and optional config-file links that should exist for the current user.
 - `profile.nix` decides which existing shell, editor, terminal, agent, and desktop settings Home Manager is allowed to adopt.
 - `home-manager switch` evaluates those declarations, downloads or builds the required packages in the Nix store, creates a new generation, and activates it for the current user.
@@ -49,12 +49,12 @@ In this repository:
 
 Each switch creates a generation: a versioned snapshot of the store-managed packages and links that Home Manager activated. Older generations can restore that managed state. Adopted configurations use links to the live files in this repository, however, so a Home Manager rollback does not restore earlier contents of those files; use Git to roll their contents back.
 
-With the checked-in safe profile (`desktop = "none"` and every `manage...` switch false), Home Manager:
+With the checked-in baseline profile (`desktop = "none"`, `manageWezterm = true`, and every other `manage...` switch false), Home Manager:
 
 - Installs every package declared in `home.packages`, enables the Home Manager CLI, and installs Hack Nerd Font with user-level fontconfig integration.
 - Generates the user-environment setup that adds the Nix profiles to `PATH` and exports the telemetry opt-outs plus `AGENTIC_DISPLAY_SERVER=auto` to shell and systemd user sessions.
 - Runs the Codex privacy activation that preserves unrelated settings while enforcing the analytics and OpenTelemetry keys documented under [Telemetry policy](#telemetry-policy).
-- Adopts no existing shell, editor, terminal, agent, or desktop configuration. Those config families remain opt-in; [Make it yours](#make-it-yours) lists every switch and its scope.
+- Adopts `~/.config/wezterm` from this repository. Existing shell, editor, agent, and desktop configuration remains untouched; [Make it yours](#make-it-yours) lists every switch and its scope.
 
 This is not a replacement for the Linux distribution. It does not manage the kernel, drivers, display manager, system-wide packages, or root services. Debian, Ubuntu, Fedora, or Arch still own the operating system; Home Manager owns only the selected user environment.
 
@@ -104,6 +104,7 @@ nix --extra-experimental-features 'nix-command flakes' flake check --no-build --
 nix --extra-experimental-features 'nix-command flakes' build .#homeConfigurations.default.activationPackage --dry-run --impure
 ./tests/linux-config.test.sh
 ./tests/profile-matrix.test.sh
+./tests/wezterm-raw-helper.test.sh
 ./tests/pi-calm.test.sh
 ./tests/build-matrix.sh
 ```
@@ -137,12 +138,13 @@ If the client reports `mosh-server: command not found`, bypass PATH: `mosh --ser
 
 Username, home directory, and CPU architecture need no editing: they come from the environment at switch time.
 
-The checked-in `profile.nix` is safe for an established machine: `desktop = "none"` and every adoption switch is false. Enable only the parts you want Home Manager to own:
+The checked-in `profile.nix` owns the shared WezTerm config and leaves every other established config untouched: `desktop = "none"`, `manageWezterm = true`, and every other adoption switch false. Review that WezTerm config before the first switch, then enable only the additional parts you want Home Manager to own:
 
 - `desktop`: `xfce`, `gnome`, `kde`, or `none`.
 - `displayServer`: `x11`, `wayland`, or `auto`. Explicit values select WezTerm's native backend; `auto` leaves toolkit detection alone.
 - `manageShell`: zsh files, aliases, editor variable, starship config, and login-shell setup.
-- `manageNvim`, `manageWezterm`, `manageHerdr`: the matching config directory.
+- `manageWezterm`: the shared terminal config; enabled in the checked-in profile.
+- `manageNvim`, `manageHerdr`: the matching config directory; disabled by default.
 - `managePiResources`: Pi settings, model overrides, themes, and extensions; never credentials, sessions, caches, or runtime state.
 - `manageClaudeSettings`: off by default so an established Claude setup is not replaced.
 - `manageAgentInstructions`: off by default so Kun's policy does not silently replace your own Claude, Codex, or OpenCode instructions.
