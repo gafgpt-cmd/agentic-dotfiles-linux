@@ -71,6 +71,73 @@ fi
 [ "$(git -C "$bootstrap_lazy" rev-parse HEAD)" = "$lazy_commit" ] \
   || fail "the cached Lazy commit was not restored offline"
 
+concurrent_data="$TMP_ROOT/concurrent-data"
+concurrent_lazy="$concurrent_data/nvim/lazy/lazy.nvim"
+mkdir -p "$concurrent_lazy"
+git -C "$concurrent_lazy" init -q
+printf 'concurrent checkout\n' >"$concurrent_lazy/fixture"
+git -C "$concurrent_lazy" add fixture
+git -C "$concurrent_lazy" -c user.name=dotfiles-test -c user.email=dotfiles-test@example.invalid \
+  commit -qm fixture
+cp -R "$bootstrap_lazy/.git/objects/." "$concurrent_lazy/.git/objects/"
+git -C "$concurrent_lazy" cat-file -e "$lazy_commit^{commit}" \
+  || fail "the concurrent Lazy fixture does not contain the cached commit"
+real_git=$(command -v git)
+git_wrapper_dir="$TMP_ROOT/git-wrapper"
+git_active="$TMP_ROOT/git-active"
+mkdir -p "$git_wrapper_dir"
+cat >"$git_wrapper_dir/git" <<'SH'
+#!/bin/sh
+set -eu
+is_checkout=false
+for arg in "$@"; do
+  if [ "$arg" = checkout ]; then
+    is_checkout=true
+    break
+  fi
+done
+if [ "$is_checkout" = false ]; then
+  exec "$REAL_GIT" "$@"
+fi
+if ! mkdir "$GIT_ACTIVE" 2>/dev/null; then
+  printf 'concurrent git mutation detected\n' >&2
+  exit 99
+fi
+trap 'rmdir "$GIT_ACTIVE"' EXIT INT TERM
+sleep 1
+"$REAL_GIT" "$@"
+SH
+chmod +x "$git_wrapper_dir/git"
+run_concurrent_nvim() {
+  export PATH="$git_wrapper_dir:$PATH"
+  export REAL_GIT="$real_git"
+  export GIT_ACTIVE="$git_active"
+  run_nvim_with_data "$concurrent_data" --headless \
+    --cmd 'set shadafile=NONE' \
+    --cmd "lua package.preload['lazy'] = function() return { setup = function() end } end" \
+    +qa
+}
+run_concurrent_nvim >"$TMP_ROOT/concurrent-1.log" 2>&1 &
+concurrent_pid_1=$!
+run_concurrent_nvim >"$TMP_ROOT/concurrent-2.log" 2>&1 &
+concurrent_pid_2=$!
+concurrent_status=0
+wait "$concurrent_pid_1" || concurrent_status=1
+wait "$concurrent_pid_2" || concurrent_status=1
+if [ "$concurrent_status" -ne 0 ]; then
+  cat "$TMP_ROOT/concurrent-1.log" "$TMP_ROOT/concurrent-2.log" >&2
+  fail "concurrent Neovim startups collided while synchronizing Lazy"
+fi
+if [ "$(git -C "$concurrent_lazy" rev-parse HEAD)" != "$lazy_commit" ]; then
+  cat "$TMP_ROOT/concurrent-1.log" "$TMP_ROOT/concurrent-2.log" >&2
+  fail "concurrent Neovim startups did not leave Lazy at the locked commit"
+fi
+
+if [ "${NVIM_BOOTSTRAP_ONLY:-0}" = 1 ]; then
+  pass "Lazy bootstrap fetches, works offline, and serializes concurrent startup"
+  exit 0
+fi
+
 startup_log="$TMP_ROOT/startup.log"
 if ! run_nvim --headless +qa >"$startup_log" 2>&1; then
   cat "$startup_log" >&2

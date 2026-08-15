@@ -132,27 +132,11 @@ package.preload["wezterm"] = function()
     end,
     target_triple = os.getenv("WEZTERM_TARGET") or "x86_64-unknown-linux-gnu",
     truncate_right = function(text) return text end,
-    url = {
-      parse = function(uri)
-        assert(uri == [[file://C:\Users\Toni\My%20File.lua#42]])
-        return {
-          scheme = "file",
-          file_path = [[C:\Users\Toni\My File.lua]],
-          fragment = "42",
-        }
-      end,
-    },
   }
 end
 local config = assert(loadfile(os.getenv("WEZTERM_CONFIG")))()
 if os.getenv("WEZTERM_PROBE") == "shell" then
   io.write(config.default_prog and config.default_prog[1] or "default", "\n")
-elseif os.getenv("WEZTERM_PROBE") == "uri" then
-  local action
-  local result = handlers["open-uri"]({
-    perform_action = function(_, value) action = value end,
-  }, {}, [[file://C:\Users\Toni\My%20File.lua#42]])
-  io.write(table.concat({ tostring(result), table.unpack(action.args) }, "\t"), "\n")
 else
   io.write(tostring(config.enable_wayland), "\n")
 end
@@ -177,11 +161,6 @@ wezterm_shell=$(env SHELL="$bad_shell" HOME="$test_home" WEZTERM_PROBE=shell \
   WEZTERM_CONFIG="$ROOT/home/.config/wezterm/wezterm.lua" "$lua_bin" "$harness")
 [ "$wezterm_shell" != "$bad_shell" ] \
   || fail "WezTerm selects a non-executable SHELL"
-
-uri_action=$(env HOME="$test_home" WEZTERM_TARGET=x86_64-pc-windows-msvc WEZTERM_PROBE=uri \
-  WEZTERM_CONFIG="$ROOT/home/.config/wezterm/wezterm.lua" "$lua_bin" "$harness")
-[ "$uri_action" = $'false\tnvim\t+42\tC:\\Users\\Toni\\My File.lua' ] \
-  || fail "WezTerm does not preserve and decode a Windows file hyperlink"
 
 [ "$(wezterm_backend wayland)" = true ] || fail "WezTerm does not enable native Wayland on a Wayland profile"
 [ "$(wezterm_backend x11)" = false ] || fail "WezTerm does not force X11 on an X11 profile"

@@ -223,17 +223,34 @@ local function run_git(args)
   return vim.trim(output)
 end
 
-if not vim.uv.fs_stat(lazypath) then
-  local lazyrepo = 'https://github.com/folke/lazy.nvim.git'
-  run_git { 'git', 'clone', '--filter=blob:none', '--branch=stable', lazyrepo, lazypath }
-end
-if run_git { 'git', '-C', lazypath, 'rev-parse', 'HEAD' } ~= lazy_commit then
-  vim.fn.system { 'git', '-C', lazypath, 'cat-file', '-e', lazy_commit .. '^{commit}' }
-  if vim.v.shell_error ~= 0 then
-    run_git { 'git', '-C', lazypath, 'fetch', '--filter=blob:none', 'origin', lazy_commit }
-  end
-  run_git { 'git', '-C', lazypath, 'checkout', lazy_commit }
-end
+local flock = vim.fn.exepath 'flock'
+assert(flock ~= '', 'flock is required to bootstrap lazy.nvim safely')
+vim.fn.mkdir(vim.fn.fnamemodify(lazypath, ':h'), 'p')
+run_git {
+  flock,
+  lazypath .. '.lock',
+  '/bin/sh',
+  '-eu',
+  '-c',
+  [[
+lazypath=$1
+lazyrepo=$2
+lazy_commit=$3
+if [ ! -d "$lazypath/.git" ]; then
+  git clone --filter=blob:none --branch=stable "$lazyrepo" "$lazypath"
+fi
+if [ "$(git -C "$lazypath" rev-parse HEAD)" != "$lazy_commit" ]; then
+  if ! git -C "$lazypath" cat-file -e "$lazy_commit^{commit}"; then
+    git -C "$lazypath" fetch --filter=blob:none origin "$lazy_commit"
+  fi
+  git -C "$lazypath" checkout "$lazy_commit"
+fi
+]],
+  'lazy-bootstrap',
+  lazypath,
+  'https://github.com/folke/lazy.nvim.git',
+  lazy_commit,
+}
 vim.opt.rtp:prepend(lazypath)
 
 -- [[ Configure and install plugins ]]

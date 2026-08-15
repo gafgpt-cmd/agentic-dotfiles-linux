@@ -308,34 +308,46 @@ config.hyperlink_rules = wezterm.default_hyperlink_rules()
 -- producing a syntax error that wezterm's show-keys silently swallows while
 -- falling back to the default config.
 local path_body
+local path_format
 if is_windows then
   -- Drive-letter paths, e.g. C:\Users\toni\src\main.rs
   path_body = [==[([A-Za-z]:\\[^\s:*?"<>|]+)]==]
+  path_format = "wezterm-file:///$1"
 else
   path_body = [==[(/(?:home|root|opt|usr|var|etc|tmp|srv|mnt|media)/[^\s:'"()\[\]]+)]==]
+  path_format = "file://$1"
 end
 
 -- Most specific first: path with a line number.
 table.insert(config.hyperlink_rules, {
   regex = path_body .. [==[:(\d+)]==],
-  format = "file://$1#$2",
+  format = path_format .. "#$2",
 })
 table.insert(config.hyperlink_rules, {
   regex = path_body,
-  format = "file://$1",
+  format = path_format,
 })
 
--- Only hijack file:// links that carry a line number -- those are unambiguously
--- code references. Everything else (PDFs, images, directories) keeps its normal
+-- Open numbered code references in Neovim. Other file links keep their normal
 -- desktop handler.
 wezterm.on("open-uri", function(window, pane, uri)
   local url = wezterm.url.parse(uri)
+  local is_windows_file = url.scheme == "wezterm-file"
+  if is_windows_file then
+    local path = url.path:gsub("^/", ""):gsub("\\", "/"):gsub("%%5[cC]", "/")
+    local fragment = url.fragment and "#" .. url.fragment or ""
+    url = wezterm.url.parse("file:///" .. path .. fragment)
+  end
   if url.scheme == "file" and url.fragment and url.fragment:match("^%d+$") then
     window:perform_action(
       wezterm.action.SpawnCommandInNewTab({ args = { "nvim", "+" .. url.fragment, url.file_path } }),
       pane
     )
     return false -- suppress default handling
+  end
+  if is_windows_file and url.scheme == "file" then
+    wezterm.open_with(url.file_path)
+    return false
   end
 end)
 
