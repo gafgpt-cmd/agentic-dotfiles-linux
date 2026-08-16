@@ -175,6 +175,10 @@ in
   home.file.".claude/statusline-command.sh" = lib.mkIf profile.manageClaudeSettings {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/statusline-command.sh";
   };
+  # General agent skill — always deployed, independent of the Claude-settings
+  # toggle, so activating it never touches settings.json / statusline.
+  home.file.".claude/skills/git-orient".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/skills/git-orient";
 
   # Pi credentials and runtime state stay local. Only authored resources are linked.
   home.file.".pi/agent/themes" = lib.mkIf profile.managePiResources {
