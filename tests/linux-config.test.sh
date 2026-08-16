@@ -181,7 +181,16 @@ if run_codex_privacy relative/codex 2>/dev/null; then
   fail "the Codex privacy entry accepted a relative CODEX_HOME"
 fi
 
-# --- safe defaults: the committed profile adopts nothing ----------------------
+# --- baseline ownership: only WezTerm is adopted -------------------------------
+
+safe_profile=$(dotfiles_hm_profile 'manageWezterm = false;')
+safe_files=$(dotfiles_hm_targets "$safe_profile")
+for target in "${DOTFILES_ADOPTABLE_PATHS[@]}"; do
+  if dotfiles_owns "$safe_files" "$target"; then
+    fail "the all-off profile unexpectedly adopts ~/$target"
+  fi
+done
+wezterm_profile=$(dotfiles_hm_profile 'manageWezterm = true;')
 
 [ "$(hm_eval programs.zsh.enable)" = false ] || fail "safe profile takes over the shell"
 [ "$(hm_eval programs.starship.enable)" = false ] || fail "safe profile takes over the prompt"
@@ -199,12 +208,55 @@ jq -e 'index("pi-coding-agent")' >/dev/null \
   <<<"$(hm_eval home.packages --apply 'ps: map (p: p.pname or p.name) ps')" \
   || fail "the tested Pi package is not installed by Home Manager"
 
+# Standalone Home Manager packages cannot see a non-NixOS host's graphics
+# stack directly. The installed WezTerm must therefore differ from raw nixpkgs.
+raw_wezterm=$(dotfiles_nix eval --raw --impure \
+  "path:$ROOT#homeConfigurations.default.pkgs.wezterm.outPath")
+managed_wezterm=$(dotfiles_nix eval --raw --impure \
+  "path:$ROOT#homeConfigurations.default.config.home.packages" --apply '
+    ps: let
+      matches = builtins.filter (p: (p.pname or p.name) == "wezterm") ps;
+    in if builtins.length matches == 1
+       then (builtins.head matches).outPath
+       else throw "expected exactly one WezTerm package"
+  ')
+[ "$managed_wezterm" != "$raw_wezterm" ] \
+  || fail "WezTerm is not GPU-wrapped for a non-NixOS host"
+
+nvim_desktop=$(dotfiles_nix eval --raw --impure --expr \
+  "($wezterm_profile).config.home.file.\".local/share/applications/nvim.desktop\".text") \
+  || fail "the Neovim desktop launcher is not defined"
+managed_nvim=$(dotfiles_nix eval --raw --impure \
+  "path:$ROOT#homeConfigurations.default.pkgs.neovim.outPath")
+desktop_file="$TMP_ROOT/nvim.desktop"
+printf '%s' "$nvim_desktop" >"$desktop_file"
+python3 - "$desktop_file" "$managed_wezterm/bin/wezterm" "$managed_nvim/bin/nvim" <<'PY' \
+  || fail "the Neovim desktop launcher does not invoke wrapped WezTerm directly"
+import configparser
+import shlex
+import sys
+
+parser = configparser.RawConfigParser(interpolation=None, strict=True)
+parser.optionxform = str
+with open(sys.argv[1], encoding="utf-8") as desktop:
+    parser.read_file(desktop)
+entry = parser["Desktop Entry"]
+assert entry.getboolean("Terminal") is False
+assert shlex.split(entry["Exec"]) == [
+    sys.argv[2], "start", "--", sys.argv[3], "%F"
+]
+PY
+
 jq -e . "$ROOT/home/.claude/settings.json" "$ROOT/home/.pi/agent/models.json" \
   "$ROOT/home/.pi/agent/settings.json" "$ROOT/home/.pi/agent/themes/rose-pine-moon.json" >/dev/null \
   || fail "managed JSON is invalid"
 
 managed_files=$(hm_eval home.file --apply 'fs: map (f: f.target) (builtins.attrValues fs)' \
   | dotfiles_normalize_targets)
+dotfiles_owns "$managed_files" ".config/wezterm" \
+  || fail "the baseline profile no longer owns the canonical WezTerm config"
+dotfiles_owns "$managed_files" ".local/share/applications/nvim.desktop" \
+  || fail "WezTerm adoption no longer owns the Neovim desktop launcher"
 adopted_files=$(dotfiles_hm_targets "$(dotfiles_hm_profile '
   manageShell = true; manageNvim = true; manageWezterm = true; manageHerdr = true;
   managePiResources = true; manageClaudeSettings = true; manageAgentInstructions = true;
@@ -222,4 +274,4 @@ done
 [ "$(hm_eval xfconf.settings)" = '{}' ] || fail "safe profile changes XFCE settings"
 [ "$(hm_eval dconf.settings)" = '{}' ] || fail "safe profile changes GNOME settings"
 
-pass "entry points guard themselves, telemetry is off in shell and graphical sessions, Codex stays private, and the safe profile adopts nothing"
+pass "entry points guard themselves, telemetry is off, Codex stays private, and baseline ownership stays narrow"
